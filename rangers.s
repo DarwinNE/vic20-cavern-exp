@@ -39,9 +39,8 @@
         ColourRead= $C      ; Colour read by GetChar (b.)
         POSCHARPT = $D      ; Pointer for a character in memory (w.)
         POSCOLPT  = $F      ; Pointer for a colour in memory (w.)
-
-        SPRITECH  = $11      ; Pointer to the group of 4 ch. for a sprite (word)
-        CHRPTR    = $13      ; Pointer to the original ch. in a sprite (word)
+        SPRITECH  = $11     ; Pointer to the group of 4 ch. for a sprite (word)
+        CHRPTR    = $13     ; Pointer to the original ch. in a sprite (word)
         SpriteX   = $15     ; X position (offset in a char) of a sprite (byte)
         SpriteY   = $16     ; Y position (offset in a char) of a sprite (byte)
         CharShr   = $17     ; Employed in LoadSprite (b.)
@@ -52,7 +51,7 @@
         CurrentCode=$1C     ; Code being processed for drawing walls (b.)
         Pos       = $1D     ; Used by PrintStr
         CavernPTR = $1E     ; Pointer to the cavern data (w.)
-        CavernS   = $20     ; Size of the cavern (b.)
+        TempOr    = $20     ; Temp. for PrepareCopy (b.)
         CurrentYPos=$21     ; Position in the cavern (b.)
         ShipYSpeed= $22     ; Vertical speed of ship (relative to scroll, b.)
         IrqCn     = $23     ; Counter for the IRQ
@@ -62,15 +61,15 @@
         ShipPosX  = $27     ; X position of the ship in the game in pixels (b.)
         ShipPosY  = $28     ; Y position of the ship in the game in pixels (b.)
         Win       = $29     ; Specify if the game should be stopped (b.)
-        Joystick  = $2A     ; Different from zero if the joystick was used (b.)
+        VoiceBase = $2A     ; = 128 music on, = 0 music off (b.)
         keyin     = $2B     ; Last key typed.
-        ShipChrX=$2C        ; X position of the ship in characters (b.)
-        ShipChrY=$2D        ; Y position of the ship in characters (b.)
+        ShipChrX  = $2C     ; X position of the ship in characters (b.)
+        ShipChrY  = $2D     ; Y position of the ship in characters (b.)
         ShipXSpeed= $2E     ; Horisontal speed of the ship (b.)
         CurrXPosL = $2F     ; Current shift (in ch.) of the left wall (b.)
         CurrXPosR = $30     ; Current shift (in ch.) of the right wall (b.)
         CurrCode  = $31     ; Current code while drawing the cavern (b.)
-        BorderCode= $32     ; Code to be used for the border (b.)
+        SFXCounter= $32     ; Sound Effects counter (b.)
         Direction = $33     ; =0 if right border =128 if left border (b. cavern)
         SOURCE    = $34     ; Source pointer for CopyMem (w.)
         DEST      = $36     ; Destination pointer for CopyMem (w.)
@@ -89,24 +88,9 @@
         IRQfreec  = $45     ; Free running counter sync with IRQ (b.)
         TmpPos    = $46     ; Temporary for PosChar (b.)
         PlantPos  = $47     ; Temporary for PutPlant1/2 (b.)
-        GremlinsX = $48     ; X position of the gremlin (b.)
-        GremlinsY = $49     ; Y position of the gremlin (b.)
-
-        VoiceBase = $4E
-
-        Voice1ptr = $4F
-        Voice1ctr = $50
-        Loop1ctr  = $51
-        Loop1str  = $52
-        Voice1drt = $53
-        Voice1nod = $54
-
-        Voice2ptr = $55
-        Voice2ctr = $56
-        Loop2ctr  = $57
-        Loop2str  = $58
-        Voice2drt = $59
-        Voice2nod = $60
+        GremlinX  = $48     ; X position of the gremlin (b.)
+        GremlinY  = $49     ; Y position of the gremlin (b.)
+    
 
 
         INITVALC=$ede4
@@ -126,25 +110,25 @@
         VICCOLOR = $900F    ; Screen and border colours
 
 ; VIA addresses
-        PORTAVIA1  = $9111   ; Port A 6522 (joystick)
+        PORTAVIA1  = $9111      ; Port A 6522 (joystick)
         ACRVIA1    = $911B
-        PORTAVIA1d = $9113  ; Port A 6522 (joystick)
+        PORTAVIA1d = $9113      ; Port A 6522 (joystick)
         T1CLVIA1   = $9114
         T1CHVIA1   = $9115
         T1LLVIA1   = $9116
         T1LHVIA1   = $9117
-        IFRVIA1    = $911D
-        IERVIA1    = $911E
+        IFRVIA1    = $911D      ; Interrupt flags
+        IERVIA1    = $911E      ; Interrupt enable
         
-        PORTBVIA2  = $9120   ; Port B 6522 2 value (joystick)
-        PORTBVIA2d = $9122  ; Port B 6522 2 direction (joystick
+        PORTBVIA2  = $9120      ; Port B 6522 2 value (joystick)
+        PORTBVIA2d = $9122      ; Port B 6522 2 direction (joystick
         T1CLVIA2   = $9124
         T1CHVIA2   = $9125
         T1LLVIA2   = $9126
         T1LHVIA2   = $9127
         ACRVIA2    = $912B
-        IFRVIA2    = $912D
-        IERVIA2    = $912E
+        IFRVIA2    = $912D      ; Interrupt flags
+        IERVIA2    = $912E      ; Interrupt enable
 
         MEMSCR   = $1E00    ; Start address of the screen memory (unexp. VIC)
         MEMCLR   = $9600    ; Start address of the colour memory (unexp. VIC)
@@ -255,8 +239,6 @@ ValidatePos:
 @ok:        rts
 
 CheckJoystick:
-            lda #$ff
-            sta Joystick
             lda PORTAVIA1
             and #%00010000  ; Left
             beq left
@@ -269,18 +251,7 @@ CheckJoystick:
             lda PORTAVIA1
             and #%00000100  ; Up
             beq up
-            
-            lda #$00
-            sta Joystick
             rts
-           
-CorJoystick:
-            lda Joystick
-            beq @ccc
-            jsr ShortDelay
-            lda #$00
-            sta Joystick
-@ccc:       rts
 
 StartGame:  lda #$2F        ; Turn on the volume, set multicolour add. colour 2
             sta VOLUME
@@ -289,37 +260,33 @@ StartGame:  lda #$2F        ; Turn on the volume, set multicolour add. colour 2
             lda #$08
             sta VICCOLOR
             lda #$0
+            sta JustDrawn
             sta CurrentYPos
             sta ShipXSpeed
             sta ShipYSpeed
+            sta CavernPosX
             sta VertPosPx
             sta PlantShoot
             sta PlantDir
             sta Win
-            sta ShipPosY
             sta Score
             sta Score+1
             sta CanIncLev
             sta Level
+            sta RingState
+            sta IRQfreec
             lda #$80
             sta UpdateWPos
             sta GremlinX
             jsr CLSA
-            lda #CYAN
-            sta Colour
-            lda #<MESSAGE
-            sta str1
-            lda #>MESSAGE
-            sta str1+1
-            ldx #5
-            ldy #10
-            jsr PrintStr
             ldx #4
             stx CurrXPosL
             ldx #11
             stx CurrXPosR
             lda #64
             sta ShipPosX
+            sta ShipPosY
+            jsr PutRings
             rts
 
 ; Draw a cavern wall in the position specified in PosX, PosY
@@ -395,7 +362,12 @@ NoDecoration:                   ; End of the decoration code
             bne @nd1
             jmp PutPlant1
 @nd1:       cmp #P_PLANT2
+            bne @nd3
             jmp PutPlant2
+@nd3:       lda #7              ; Put a gremlin here
+            sta GremlinX
+            lda #31
+            sta GremlinY
 NoSurface:  lda CurrCode        ; Handle rings and levels
             and #L_MASK
             cmp #L_RING
@@ -406,7 +378,7 @@ NoSurface:  lda CurrCode        ; Handle rings and levels
             jmp IncrementLevel
 NoRings:
             lda PosY
-            ;clc                ; The carry should be always clear here
+            clc                 ; The carry should be always clear here
             adc #4              ; Every step is 4 lines
             sta PosY
             cmp #30             ; Check if we got to the end of the screen
@@ -498,7 +470,7 @@ PutRock1:   jsr MoveBack
 PutRock2:   lda #ROCK2
             jsr MoveBack
             sta (POSCHARPT),Y
-            lda #CYAN
+            lda #RED
             sta (POSCOLPT),Y
             jsr MoveForward
             jmp NoDecoration
@@ -551,7 +523,12 @@ PutPlant1:  lda #PLANT1
             lda #YELLOW
             sta (POSCOLPT),Y
             ldy PlantPos
-            jmp NoRings
+            lda SFXCounter
+            beq @exit
+            lda EFFECTS
+            ora VoiceBase
+            sta EFFECTS
+@exit:      jmp NoRings
 
 PutPlant2:  lda #PLANT2
             sta (POSCHARPT),Y
@@ -573,7 +550,12 @@ PutPlant2:  lda #PLANT2
             lda #YELLOW
             sta (POSCOLPT),Y
             ldy PlantPos
-            jmp NoRings
+            lda SFXCounter
+            beq @exit
+            lda EFFECTS
+            ora VoiceBase
+            sta EFFECTS
+@exit:      jmp NoRings
 
 ; INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT
 ;
@@ -594,10 +576,26 @@ SyncNTSC:
             lda #<TIMER_VALUE_NTSC
             ldx #>TIMER_VALUE_NTSC
             jmp ContInit1
+; Screen init value for PAL and NTSC
+
+CenterScreenPAL:
+            lda #$3E        ; Set a 31 row-high column
+            sta VICROWNC
+            ldx #$12
+            ldy #$16
+            jmp ContInit
+
+CenterScreenNTSC:
+            lda #$36        ; Set a 27 row-high column
+            sta VICROWNC
+            ldx #$0A
+            ldy #$10
+            jmp ContInit
 
 
 Init:       lda #$80        ; Autorepeat on on the keyboard
             sta REPEATKE
+            sta VoiceBase
             lda #$08        ; Define screen colour and background
             sta VICCOLOR
             lda #$90        ; Set a 16 column-wide screen
@@ -648,6 +646,7 @@ ContInit1:  stx T1CHVIA2    ; Set up the timer and start it
             sta HiScore     ; Zero the hi-score
             sta HiScore+1
             sta PORTAVIA1d  ; Prepare VIAs for joystick
+            sta IrqCn
             rts
 
 ; Synchronize raster on PAL systems
@@ -673,21 +672,6 @@ SyncLater:
             bne @loopsync
             rts
 
-; Screen init value for PAL and NTSC
-
-CenterScreenPAL:
-            lda #$3E        ; Set a 31 row-high column
-            sta VICROWNC
-            ldx #$12
-            ldy #$16
-            jmp ContInit
-
-CenterScreenNTSC:
-            lda #$36        ; Set a 27 row-high column
-            sta VICROWNC
-            ldx #$0A
-            ldy #$10
-            jmp ContInit
 
 
 ; Copy the graphic chars. They are subjected to be changed during the pixel-by
@@ -712,52 +696,25 @@ PrintRes:   sta Colour
             jsr PrintBCD
             lda Res
             jmp PrintBCD
-            
 
-; Write 16 characters vertically start from the current position of
-; POSCHARPT and put red in the corresponding colour address.
-
-Vert16car:  ldx #16
-@loop1:     lda BorderCode
-            sta (POSCHARPT),Y
-            lda #RED
-            sta (POSCOLPT),Y
-            tya
-            clc
-            adc #16
-            tay
-            dex
-            bne @loop1
+PutRings:
+            ldy #255
+@loop:      lda NMIHandler,y
+            cmp #10
+            bmi @noringr
+            lda CavernRight,y
+            ora #L_RING
+            sta CavernRight,y
+            bne @noringl        ; Branch always
+@noringr:   lda NMIHandler,y
+            cmp #20
+            bmi @noringl
+            lda CavernLeft,y
+            ora #L_RING
+            sta CavernLeft,y
+@noringl:   dey
+            bne @loop
             rts
-
-DrawHalfBorder:
-            ldy #0
-            lda #BORDER1L
-            sta BorderCode
-            jsr Vert16car
-            ldy #0
-            lda #BORDER2L
-            sta BorderCode
-            jsr Vert16car
-            ldy #15
-            lda #BORDER2R
-            sta BorderCode
-            jsr Vert16car
-            ldy #15
-            lda #BORDER1R
-            sta BorderCode
-            jmp Vert16car
-            
-DrawBorder: rts
-            
-            ldy #0
-            ldx #0
-            jsr PosChar
-            jsr DrawHalfBorder
-            ldy #15
-            ldx #0
-            jsr PosChar
-            jmp DrawHalfBorder
 
 ; NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI
 ;
@@ -771,6 +728,8 @@ NMIHandler: pha
             sta VICSCRHO
             ;lda #$0A
             ;sta VICCOLOR
+            ;lda #0
+            ;sta VOICE1
 @nodrawship:
             bit T1CLVIA1
             pla
@@ -784,29 +743,47 @@ NMIHandler: pha
 ;
 ; IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ
 vpos=$20
+negspeed:  lda #0
+            sec
+            sbc ShipXSpeed
+            jmp posspeed
+
 IrqHandler: pha
             txa             ; Save registers
             pha
             tya
             pha
-
             lda #08
             sta VICCOLOR
             lda #63         ; Switch "off" the screen, shifting all to right
             sta VICSCRHO
+            lda ShipXSpeed
+            bmi negspeed
+posspeed:   asl
+            asl
+            asl
+            asl
+            ora VoiceBase
+            sta VOICE1
             ;lda #5
             ;sta VICSCRVE
             inc IRQfreec
             lda Win
             beq @nowin
             jmp @cont3
-@nowin:
-            dec IrqCn
-            ;lda IrqCn
-            ;cmp Period      ; Execute every PERIOD/60 of second
+            
+
+@nowin:     lda SFXCounter  ; Check if we have a SFX on
+            bne @FX         ; If no, shut off voice
+            lda #0
+            sta EFFECTS
+            beq @normalcont ; branch always
+@FX:        dec SFXCounter  ; If yes, decrement counter
+@normalcont:  
+            dec IrqCn       ; Execute every PERIOD/60 of second
             beq @contint
             jmp @redraw
-@contint:   lda Period          ; Restart the counter for the period
+@contint:   lda Period      ; Restart the counter for the period
             sta IrqCn
             inc VertPosPx   ; Since the screen will be scrolled upwards,
             inc VertPosPx   ; compensate the position of the ship by 2 pixels
@@ -816,7 +793,9 @@ IrqHandler: pha
             bmi @nopb       ; Check if we past 127th line.
             lda #127
             sta ShipPosY
-@nopb:      dec ScreenPos   ; Decrement the screen position so that everything
+@nopb:      ;lda #0
+            ;sta EFFECTS
+            dec ScreenPos   ; Decrement the screen position so that everything
             lda ScreenPos   ; scrolls towards the top by 2 raster lines.
             sta VICSCRVE
             
@@ -827,12 +806,14 @@ IrqHandler: pha
             sta ScreenPos
             sta VICSCRVE
             inc CurrentYPos ; We increase the position in the cavern
-            dec GremlinsY
             lda #0
             sta VertPosPx   ; We also put to 0 the shift in the ship position
             lda CanIncLev   ; And we decrement the counter for the dead time
-            beq @redraw     ; for incrementing the level
+            beq @greml      ; for incrementing the level
             dec CanIncLev
+@greml:     bit GremlinX
+            bmi @redraw
+            jsr UpdateGremlin
 @redraw:    lda ScreenPos
             cmp #vpos-15
             bne @chk
@@ -845,8 +826,6 @@ IrqHandler: pha
             jsr ChangeRingState
 @chk:       lda #EMPTY      ; Launch a complete redraw of the cavern
             jsr CLS
-            jsr DrawBorder
-            
                             ; Prepare for the left wall
             lda #<CavernLeft
             sta CavernPTR
@@ -913,7 +892,12 @@ UpdatePlants:
             bne @nochange
             lda #0
             sta PlantDir
-@nochange:  rts
+@nochange:  asl
+            asl
+            sta EFFECTS
+            lda #10
+            sta SFXCounter
+            rts
 
 ; Change the ring state in the following sequence:
 ; 0 - 1 - 2 - 3 - 2 - 1  and then restart.
@@ -944,7 +928,6 @@ ChangeRingState:
             tax
             ldy #RING
             jmp CopyChar
-            
 
 CheckCrash: 
             ldx ShipChrX
@@ -963,7 +946,7 @@ CheckCrash:
             iny
             jsr GetChar
             sta BLENDCHD
-
+                        rts
 @skip:      
             ldx BLENDCHA
             cpx #EMPTY
@@ -993,22 +976,58 @@ IncrementLevel:
             lda #('L'-'@')  ; Show L followed by the number of the level
             sta (POSCHARPT),Y
             lda Level
+            sec
             adc #(48+$80) ; Convert into a number
             iny
             sta (POSCHARPT),Y
+            lda #WHITE
+            sta (POSCOLPT),Y
             dey
             lda CanIncLev
             bne @normal
             lda #10
             sta CanIncLev
+            lda Level
+            cmp #LEVELNO-1
+            beq @maxlev
             inc Level
-            dec Period
-            lda Period
-            cmp #0
-            bne @normal
-            inc Period
+@maxlev:    txa
+            pha
+            ldx Level
+            lda LevelSpeed,X
+            sta Period
+            pla
+            tax
 @normal:    clc
             jmp NoRings
+
+UpdateGremlin:
+            ldx GremlinX
+            lda GremlinY
+            sec
+            sbc #5
+            sta GremlinY
+            tay
+            lda DrawCavern,Y      ; Use code as random numbers!
+            cmp #127
+            bmi @positive
+@negative:  dex 
+            dey
+            jsr GetChar
+            iny
+            cmp #EMPTY
+            bne @positive
+            stx GremlinX
+            rts
+@positive:  inc GremlinX
+            inx 
+            dey
+            jsr GetChar
+            iny
+            cmp #EMPTY
+            bne @positive
+            stx GremlinX
+            rts
 
 DrawGremlin:
             bit GremlinX
@@ -1016,7 +1035,7 @@ DrawGremlin:
             ldx GremlinX
             ldy GremlinY
             cpy #0
-            beq @@deactivate
+            beq @deactivate
             lda #BLUE
             sta Colour
             lda #GREMLIN
@@ -1051,10 +1070,6 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             tay             ; X and Y now contain the new positions of the ship
             sty ShipChrY
             stx ShipChrX
-            ;cpy ShipChrY
-            ;jmp EraseOldShip
-            ;cpx ShipChrX
-            ;bne EraseOldShip
 NormalShip: lda #SHIP
             sta CharCode
             lda #WHITE
@@ -1062,48 +1077,7 @@ NormalShip: lda #SHIP
             jsr LoadAppropriateSprite
             jsr CheckCrash
             jsr BlendSprite
-            ; lda #SHIP
-;             sta CharCode
-;             lda #<(GRCHARS1+SPRITE1A*8)
-;             sta SPRITECH
-;             lda #>(GRCHARS1+SPRITE1A*8)
-;             sta SPRITECH+1
-;             ;jsr LoadSprite
             jmp DrawSprite
-
-EraseOldShip:
-            tya             ; Save the positions in X and Y that become the
-            ldy ShipChrY    ; stored positions in ShipChrX and ShipChrY
-            sta ShipChrY
-            txa
-            ldx ShipChrX
-            sta ShipChrX
-            jmp NormalShip
-            bit JustDrawn
-            bmi @exit
-            lda #EMPTY
-            dey
-            jsr DrawChar
-            inx
-            jsr DrawChar
-            iny
-            dex
-            lda BLENDCHA
-            jsr DrawChar    ; X and Y still contain the old positions, though
-            iny
-            lda BLENDCHB
-            jsr DrawChar
-            dey
-            inx
-            lda BLENDCHC
-            jsr DrawChar
-            iny
-            lda BLENDCHD
-            jsr DrawChar
-            dey
-            lda #0
-            sta JustDrawn
-@exit:      jmp NormalShip
 
 ; Draw the current sprite at the ShipChrX, ShipChrY position
 
@@ -1155,6 +1129,24 @@ CheckCollision:
             rts
 Collision:  cpx #RING
             bne Die
+                            ; Here we collected a ring.
+            lda ShipChrY
+            lsr             ; Divide by four
+            lsr
+            clc
+            adc CurrentYPos
+            tay
+            lda CavernLeft,y
+            and #%00111111
+            sta CavernLeft,y 
+            lda CavernRight,y
+            and #%00111111
+            sta CavernRight,y 
+            lda #10
+            sta SFXCounter
+            lda #110
+            ora VoiceBase
+            sta EFFECTS
             lda #1
             jmp AddScore
 
@@ -1163,6 +1155,8 @@ Collision:  cpx #RING
 Die:        lda #$FF
             sta Win         ; Stop the game
             sta VICCOLOR    ; Light yellow screen, yellow border
+            lda #192
+            sta NOISE
             lda #EXPLOSION1
             sta CharCode
             lda #MULTICOLOUR
@@ -1170,14 +1164,33 @@ Die:        lda #$FF
             jsr LoadAppropriateSprite
             jsr DrawSprite
             jsr ShortDelay
+            lda #$28
+            sta VOLUME
             lda #125        ; Yellow screen, green border
             sta VICCOLOR
             jsr ShortDelay
+            lda #$24
+            sta VOLUME
             lda #42         ; Red screen, red border
             sta VICCOLOR
             jsr ShortDelay
             lda #$A         ; Black screen, red border
+            sta NOISE
             sta VICCOLOR
+            jsr ShortDelay
+            lda #$20
+            sta VOLUME
+            ldy CurrentYPos ; Put a little skeleton in the cavern
+            iny
+            iny
+            iny
+            iny
+            iny
+            iny
+            lda (CavernPTR),y
+            ora #D_SKEL
+            sta (CavernPTR),y
+            rts
 
 ; Add the value contained in A to the current score
 AddScore:   clc
@@ -1367,25 +1380,7 @@ BlendSprite:
             jsr OrChar
             ldx BLENDCHD
             ldy #SPRITE1D
-            ;jmp CopyChar       ; no rts or jmp here
-
-OrChar:     stx CharCode
-            tya
-            pha
-            jsr CalcChGenOfs
-            lda CHRPTR
-            sta SOURCE
-            lda CHRPTR+1
-            sta SOURCE+1
-            
-            pla
-            sta CharCode
-            jsr CalcChGenOfs
-            lda CHRPTR
-            sta DEST
-            lda CHRPTR+1
-            sta DEST+1
-            ldy #8
+OrChar:     jsr PrepareCopy
             ;                   ; no rts here
 OrMem:      dey
             lda (SOURCE),y
@@ -1394,20 +1389,16 @@ OrMem:      dey
             cpy #0
             bne OrMem
             rts
-; Prepare for a copy of the memory of the character to be blended in the sprite
-; 1 area.
-; X = the caracter to be blended (source)
-; Y = the sprite character (destination)
-CopyChar:   stx CharCode
-            tya
-            pha
+            
+PrepareCopy:
+            stx CharCode
+            sty TempOr
             jsr CalcChGenOfs
             lda CHRPTR
             sta SOURCE
             lda CHRPTR+1
             sta SOURCE+1
-
-            pla
+            lda TempOr
             sta CharCode
             jsr CalcChGenOfs
             lda CHRPTR
@@ -1415,6 +1406,30 @@ CopyChar:   stx CharCode
             lda CHRPTR+1
             sta DEST+1
             ldy #8
+            rts
+
+; Prepare for a copy of the memory of the character to be blended in the sprite
+; 1 area.
+; X = the caracter to be blended (source)
+; Y = the sprite character (destination)
+CopyChar:   ; stx CharCode
+;             tya
+;             pha
+;             jsr CalcChGenOfs
+;             lda CHRPTR
+;             sta SOURCE
+;             lda CHRPTR+1
+;             sta SOURCE+1
+; 
+;             pla
+;             sta CharCode
+;             jsr CalcChGenOfs
+;             lda CHRPTR
+;             sta DEST
+;             lda CHRPTR+1
+;             sta DEST+1
+;             ldy #8
+            jsr PrepareCopy
             ;                   ; no rts here
 CopyMem:    dey
             lda (SOURCE),y
@@ -1567,213 +1582,241 @@ PrintBCD:   pha             ; Save the BCD value
 ; 10 StepLeft
 ; 11 StepRight+StepLeft (wiggle)
 
-S_MASK = %00000011
-S_RIGH = %00000001
-S_LEFT = %00000010
-S_STAY = %00000000
-S_WIGG = %00000011
+S_MASK = %00000011  ; Displacement (positive: go right, negative: go left)
+S_RIGH = %00000001  ; +1
+S_LEFT = %00000010  ; -1
+S_STAY = %00000000  ; 0
+S_WIGG = %00000011  ; 0
 
 D_MASK  = %00001100
 D_ROCK1 = %00000100
 D_ROCK2 = %00001000
-D_SKEL  = %00001100
+D_SKEL  = %00001100 ; Skeleton code should be 11 as it can be OR'ed
 
 P_MASK   = %00110000
 P_PLANT1 = %00010000
 P_PLANT2 = %00100000
-P_MONST  = %00110000
+P_GREML  = %00110000
 
 L_MASK = %11000000
 L_RING = %01000000
 L_LEVEL= %10000000
 
 CAVERNLENR = 255
+
+; For each cavern wall, there should be exactly as much as S_RIGH that S_LEFT,
+; so that the size of position of the wall will roll back to the original
+; one at the beginning of the cavern. The cavern can thus be passed through
+; an infinite number of times and will not be 'crunching' or 'expanding'.
+
 CavernRight:
-            .byte S_RIGH,S_RIGH+D_ROCK1,S_STAY,S_LEFT,S_WIGG+D_ROCK1
-            .byte S_STAY,S_STAY+L_RING,S_WIGG ;+1
-            .byte S_LEFT+D_ROCK1+L_RING,S_RIGH+L_RING,S_STAY+D_ROCK1
+            .byte S_RIGH,S_RIGH,S_STAY,S_LEFT,S_WIGG
+            .byte S_STAY,S_STAY,S_WIGG ;+1  (1)
+            .byte S_LEFT,S_RIGH,S_STAY
             .byte S_LEFT,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1+L_RING,S_STAY,S_RIGH ; 0
-            .byte S_WIGG,S_RIGH+D_ROCK1+L_RING,S_STAY,S_LEFT
-            .byte S_WIGG,S_STAY+D_ROCK1,S_STAY,S_RIGH ;+1
-            .byte S_RIGH+D_ROCK1+L_RING,S_LEFT+P_PLANT2,S_STAY,S_RIGH+D_ROCK2
-            .byte S_WIGG+L_RING,S_STAY+D_ROCK1,S_STAY+D_ROCK1,S_LEFT+L_LEVEL ; 0
-            .byte S_LEFT+L_RING,S_LEFT+D_ROCK1,S_STAY,S_RIGH+D_ROCK1
-            .byte S_WIGG,S_STAY+D_ROCK1+L_RING,S_STAY
-            .byte S_WIGG+P_PLANT2 ; -1
-            .byte S_RIGH+L_RING,S_LEFT+D_ROCK1,S_STAY,S_RIGH
+            .byte S_STAY,S_STAY,S_RIGH ; 0   (2)
+            .byte S_WIGG,S_RIGH+D_ROCK1,S_STAY,S_LEFT
+            .byte S_WIGG,S_STAY+D_ROCK1,S_STAY,S_RIGH ;+1   (3)
+            .byte S_RIGH+D_ROCK1,S_LEFT+P_PLANT2,S_STAY,S_RIGH+D_ROCK2
+            .byte S_WIGG,S_STAY+D_ROCK1
+            .byte S_STAY+D_ROCK1,S_LEFT+L_LEVEL ; 0 (4) ***** LEVEL2 ******
+            .byte S_LEFT,S_LEFT+D_ROCK1,S_STAY,S_RIGH+D_ROCK1
+            .byte S_WIGG,S_STAY+D_ROCK1,S_STAY
+            .byte S_WIGG+P_PLANT2 ; -1 (5)
+            .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY,S_RIGH
             .byte S_WIGG+P_PLANT2+D_ROCK1
-            .byte S_STAY+L_RING,S_STAY+L_RING,S_LEFT+P_PLANT2 ; 0
-            .byte S_WIGG+D_ROCK1+L_RING,S_LEFT,S_STAY+D_ROCK1+L_RING
+            .byte S_STAY,S_STAY,S_LEFT+P_PLANT2 ; 0 (6)
+            .byte S_WIGG+D_ROCK1,S_LEFT,S_STAY+D_ROCK1
             .byte S_RIGH+D_ROCK2
-            .byte S_WIGG,S_STAY+D_ROCK1+L_RING,S_STAY,S_LEFT+P_PLANT2 ; -1
-            .byte S_RIGH+D_ROCK1,S_LEFT+L_RING,S_STAY+D_ROCK1
+            .byte S_WIGG,S_STAY+D_ROCK1,S_STAY,S_LEFT+P_PLANT2 ; -1 (7)
+            .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY+D_ROCK1
             .byte S_RIGH,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1+L_RING,S_STAY+L_RING,S_LEFT ; 0
+            .byte S_STAY+D_ROCK1,S_STAY,S_LEFT ; 0 (8) net: 0
             
-            .byte S_WIGG+D_ROCK1+L_RING,S_RIGH+D_ROCK2,S_STAY+D_ROCK1,S_LEFT
+            .byte S_WIGG+D_ROCK1,S_RIGH+D_ROCK2,S_STAY+D_ROCK1,S_LEFT
             .byte S_WIGG+P_PLANT2+D_ROCK1
-            .byte S_STAY+D_ROCK1+L_RING,S_STAY+D_ROCK2,S_RIGH+L_LEVEL ; +1
-            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1+L_RING,S_STAY
-            .byte S_RIGH+D_ROCK1,S_WIGG
-            .byte S_STAY,S_STAY+D_ROCK1,S_LEFT ; 0
-            .byte S_WIGG+D_ROCK1+L_RING,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK2
-            .byte S_WIGG+P_PLANT2+D_ROCK1
-            .byte S_STAY+D_ROCK1+L_RING,S_STAY+L_RING,S_LEFT+D_ROCK2 ; -1
-            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1+L_RING,S_STAY+D_ROCK1
-            .byte S_RIGH,S_WIGG+D_ROCK1,S_STAY+L_RING,S_STAY+D_ROCK2
-            .byte S_LEFT+D_ROCK1+L_RING ; 0
-            .byte S_RIGH,S_RIGH+D_ROCK2+L_RING,S_STAY+D_ROCK1,S_LEFT
-            .byte S_WIGG,S_STAY+D_ROCK2+L_RING
-            .byte S_STAY,S_WIGG+L_RING ;+1
-            .byte S_LEFT+D_ROCK1,S_RIGH+L_RING,S_STAY+D_ROCK2
-            .byte S_LEFT+D_ROCK1+L_RING,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK1,S_RIGH ; 0
-            .byte S_WIGG,S_RIGH+D_ROCK1,S_STAY+L_RING,S_LEFT,S_WIGG
-            .byte S_STAY+D_ROCK2,S_STAY+L_RING,S_RIGH+D_ROCK2 ;+1
+            .byte S_LEFT+D_ROCK1
+            .byte S_LEFT+D_ROCK2,S_RIGH+L_LEVEL ; -1 (9) ***** LEVEL3 ******
+            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY+P_GREML
+            .byte S_RIGH+D_ROCK1,S_WIGG+P_GREML
+            .byte S_STAY,S_STAY+D_ROCK1,S_LEFT ; 0 (10)
+            .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK2
+            .byte S_WIGG+P_PLANT2+D_ROCK1+P_GREML
+            .byte S_STAY+D_ROCK1,S_STAY,S_LEFT+D_ROCK2 ; -1 (11)
+            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY+D_ROCK1
+            .byte S_RIGH,S_WIGG+D_ROCK1,S_STAY,S_STAY+D_ROCK2
+            .byte S_LEFT+D_ROCK1+P_GREML ; 0 (12)
+            .byte S_RIGH,S_RIGH+D_ROCK2,S_STAY+D_ROCK1,S_LEFT
+            .byte S_WIGG,S_STAY+D_ROCK2+P_GREML
+            .byte S_STAY,S_WIGG ;+1 (13)
+            .byte S_LEFT+D_ROCK1,S_RIGH,S_STAY+D_ROCK2+P_GREML
+            .byte S_LEFT+D_ROCK1,S_WIGG+P_PLANT2+P_GREML
+            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK1,S_RIGH+P_GREML ; 0 (14)
+            .byte S_WIGG,S_RIGH+D_ROCK1,S_STAY,S_LEFT,S_WIGG+P_GREML
+            .byte S_STAY+D_ROCK2,S_STAY,S_RIGH+D_ROCK2+P_GREML ;+1 (15)
             .byte S_RIGH+D_ROCK1,S_LEFT+P_PLANT2+D_ROCK2,S_STAY
-            .byte S_RIGH,S_WIGG,S_STAY+L_RING
-            .byte S_STAY+D_ROCK2,S_LEFT+D_ROCK1+L_LEVEL ; 0
+            .byte S_RIGH,S_WIGG,S_STAY+P_GREML
+            .byte S_STAY+D_ROCK2
+            .byte S_STAY+D_ROCK1+L_LEVEL+P_GREML ; +1 (16) ***** LEVEL4 ******
+            ; tot: +1
             
-            .byte S_LEFT+D_ROCK1,S_LEFT+L_RING,S_STAY+D_ROCK1,S_RIGH+D_ROCK2
-            .byte S_WIGG+P_PLANT2+D_ROCK1,S_STAY+L_RING
-            .byte S_STAY+L_RING,S_WIGG+P_PLANT2+D_ROCK2 ; -1
-            .byte S_RIGH+D_ROCK2+L_RING,S_LEFT+D_ROCK1,S_STAY,S_RIGH+D_ROCK2
-            .byte S_WIGG+D_ROCK2+L_RING
-            .byte S_STAY+D_ROCK2,S_STAY+D_ROCK1+L_RING,S_LEFT+D_ROCK2 ; 0
-            .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2,S_STAY+L_RING,S_RIGH+D_ROCK2
+            .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK1,S_RIGH+D_ROCK2
+            .byte S_WIGG+P_PLANT2+D_ROCK1,S_STAY
+            .byte S_STAY,S_WIGG+P_PLANT2+D_ROCK2 ; -1 (17)
+            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY,S_RIGH+D_ROCK2
+            .byte S_WIGG+D_ROCK2
+            .byte S_STAY+D_ROCK2,S_STAY+D_ROCK1,S_LEFT+D_ROCK2 ; 0 (18)
+            .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK2
             .byte S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK2+L_RING,S_STAY+D_ROCK1,S_LEFT ; -1
-            .byte S_RIGH+D_ROCK1,S_LEFT+L_RING,S_STAY,S_RIGH+D_ROCK2
+            .byte S_STAY+D_ROCK2,S_STAY+D_ROCK1,S_LEFT ; -1 (19)
+            .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY,S_RIGH+D_ROCK2
             .byte S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1,S_STAY+L_RING,S_LEFT+D_ROCK2 ; 0
-            .byte S_RIGH+D_ROCK2,S_RIGH+D_ROCK1+L_RING,S_STAY+D_SKEL
-            .byte S_LEFT,S_WIGG+D_ROCK1+L_RING,S_STAY+D_ROCK1
-            .byte S_STAY+D_ROCK2,S_WIGG ;+1
-            .byte S_LEFT,S_RIGH+D_ROCK1+L_RING,S_STAY,S_LEFT+D_ROCK2
+            .byte S_STAY+D_ROCK1,S_STAY
+            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (20) ***** LEVEL5 ******
+            .byte S_RIGH+D_ROCK2,S_RIGH+D_ROCK1,S_STAY
+            .byte S_LEFT,S_WIGG+D_ROCK1,S_STAY+D_ROCK1
+            .byte S_STAY+D_ROCK2,S_WIGG ;+1 (21)
+            .byte S_LEFT,S_RIGH+D_ROCK1,S_STAY,S_LEFT+D_ROCK2
             .byte S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2,S_RIGH+D_ROCK1 ; 0
-            .byte S_WIGG+D_ROCK2+L_RING,S_RIGH
+            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2,S_RIGH+D_ROCK1 ; 0 (22)
+            .byte S_WIGG+D_ROCK2,S_RIGH
             .byte S_STAY+D_ROCK1,S_LEFT+P_PLANT2+D_ROCK1
-            .byte S_WIGG+D_ROCK1,S_STAY+D_ROCK1+L_RING
-            .byte S_STAY,S_RIGH+D_ROCK2+L_RING ;+1
-            .byte S_RIGH,S_LEFT+D_ROCK1+L_RING,S_STAY+D_ROCK1
-            .byte S_RIGH+P_PLANT2+D_ROCK2+L_RING
-            .byte S_WIGG+P_PLANT2+L_RING,S_STAY+D_ROCK2+D_ROCK1
-            .byte S_STAY+D_ROCK1+L_RING,S_LEFT+D_ROCK2 ; 0
+            .byte S_WIGG+D_ROCK1,S_STAY+D_ROCK1
+            .byte S_STAY,S_RIGH+D_ROCK2 ;+1 (23)
+            .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY+D_ROCK1
+            .byte S_RIGH+P_PLANT2+D_ROCK2
+            .byte S_WIGG+P_PLANT2,S_STAY+D_ROCK2+D_ROCK1
+            .byte S_STAY+D_ROCK1
+            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (24) ***** LEVEL6 ****** tot: 0
 
-            .byte S_WIGG+D_ROCK1+L_RING,S_LEFT+D_ROCK2+P_PLANT2,S_STAY
-            .byte S_RIGH+D_ROCK1+L_RING,S_WIGG+L_RING
-            .byte S_STAY+D_ROCK1+L_RING,S_STAY+D_ROCK2+P_PLANT2
-            .byte S_LEFT+L_LEVEL ; -1
-            .byte S_LEFT+D_ROCK1+P_PLANT2,S_RIGH+L_RING,S_STAY
+            .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2+P_PLANT2,S_STAY
+            .byte S_RIGH+D_ROCK1,S_WIGG
+            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2+P_PLANT2
+            .byte S_LEFT ; -1 (25) 
+            .byte S_LEFT+D_ROCK1+P_PLANT2,S_RIGH,S_STAY
             .byte S_LEFT,S_WIGG+D_ROCK1
-            .byte S_STAY+P_PLANT2,S_STAY+D_ROCK2+P_PLANT2,S_RIGH+L_RING ; 0
-            .byte S_WIGG+D_ROCK2+L_RING,S_RIGH+P_PLANT2,S_STAY+D_ROCK1+P_PLANT2
-            .byte S_LEFT+L_RING,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK1+P_PLANT2,S_STAY+D_ROCK2,S_RIGH ;+1
-            .byte S_RIGH+D_ROCK1+L_RING,S_LEFT
+            .byte S_STAY+P_PLANT2,S_STAY+D_ROCK2+P_PLANT2,S_RIGH ; 0 (26)
+            .byte S_WIGG+D_ROCK2,S_RIGH+P_PLANT2,S_STAY+D_ROCK1+P_PLANT2
+            .byte S_LEFT,S_WIGG+P_PLANT2
+            .byte S_STAY+D_ROCK1+P_PLANT2,S_STAY+D_ROCK2,S_RIGH ;+1 (27)
+            .byte S_RIGH+D_ROCK1,S_LEFT
             .byte S_STAY+D_ROCK2+P_PLANT2,S_RIGH+D_ROCK1,S_WIGG
-            .byte S_STAY+D_SKEL+L_RING
-            .byte S_STAY+D_ROCK2+L_RING,S_LEFT+D_ROCK1+P_PLANT2 ; 0
-            .byte S_LEFT+D_ROCK1,S_LEFT+L_RING,S_STAY+D_ROCK2+P_PLANT2
+            .byte S_STAY
+            .byte S_STAY+D_ROCK2
+            .byte S_LEFT+D_ROCK1+P_PLANT2+L_LEVEL ; 0 (28) ***** LEVEL7 ******
+            .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK2+P_PLANT2
             .byte S_RIGH+D_ROCK1,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK2+L_RING,S_STAY,S_WIGG+D_ROCK1+L_LEVEL ; -1
-            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1+L_RING,S_STAY,S_RIGH,S_WIGG
-            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2+L_RING,S_LEFT ; 0
-            .byte S_WIGG,S_LEFT+L_RING,S_STAY+D_ROCK2,S_RIGH+D_ROCK1,S_WIGG
-            .byte S_STAY+D_ROCK2,S_STAY+L_RING,S_LEFT ; -1
-            .byte S_RIGH+D_ROCK1,S_LEFT+L_RING,S_STAY+D_ROCK1
-            .byte S_RIGH,S_WIGG+D_ROCK1+L_RING,S_STAY,S_STAY+D_ROCK2,S_LEFT ; 0
+            .byte S_STAY+D_ROCK2,S_STAY,S_WIGG+D_ROCK1+L_LEVEL ; -1 (29)
+            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY,S_RIGH,S_WIGG
+            .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2,S_LEFT ; 0 (30)
+            .byte S_WIGG,S_LEFT,S_STAY+D_ROCK2,S_RIGH+D_ROCK1,S_WIGG
+            .byte S_STAY+D_ROCK2,S_STAY,S_LEFT ; -1 (31)
+            .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY+D_ROCK1
+            .byte S_RIGH,S_RIGH+D_ROCK1
+            .byte S_STAY,S_STAY+D_ROCK2,S_LEFT ; 0 (32) tot: -1
             
-CavernLeft: .byte S_LEFT,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK1
-            .byte S_WIGG+D_ROCK2,S_STAY+D_ROCK1+L_RING
-            .byte S_STAY+D_ROCK2,S_WIGG+D_ROCK1 ; -1
-            .byte S_RIGH+D_ROCK2+L_RING,S_LEFT,S_STAY,S_RIGH+D_ROCK1
-            .byte S_WIGG+D_ROCK2,S_STAY+L_RING
-            .byte S_STAY,S_LEFT+D_ROCK1+L_RING ; 0
-            .byte S_WIGG+D_ROCK2+P_PLANT1,S_LEFT+D_ROCK1+L_RING,S_STAY,S_RIGH
-            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_LEFT ; -1
-            .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2+L_RING,S_STAY
-            .byte S_RIGH+D_ROCK2+L_RING,S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY
-            .byte S_LEFT+D_ROCK1 ; 0
-            .byte S_RIGH+D_ROCK2+L_RING,S_RIGH,S_STAY+D_ROCK1
+CavernLeft: 
+            .byte S_LEFT,S_LEFT,S_STAY,S_RIGH
+            .byte S_WIGG,S_STAY
+            .byte S_STAY,S_WIGG ; -1 (1)
+            .byte S_RIGH,S_LEFT,S_STAY,S_RIGH
+            .byte S_WIGG,S_STAY
+            .byte S_STAY,S_LEFT+D_ROCK1 ; 0 (2)
+            .byte S_WIGG+D_ROCK2+P_PLANT1,S_LEFT+D_ROCK1,S_STAY,S_RIGH
+            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_LEFT ; -1 (3)
+            .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2,S_STAY
+            .byte S_RIGH+D_ROCK2,S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY
+            .byte S_LEFT+D_ROCK1++L_LEVEL ; 0 (4)  ***** LEVEL2 ******
+            .byte S_RIGH+D_ROCK2,S_RIGH,S_STAY+D_ROCK1
             .byte S_LEFT+D_ROCK2,S_WIGG+P_PLANT1
-            .byte S_STAY,S_STAY+D_ROCK1+L_RING,S_WIGG ;+1
-            .byte S_LEFT+D_ROCK2,S_RIGH+L_RING,S_STAY+D_ROCK2
-            .byte S_LEFT+L_RING,S_WIGG+P_PLANT1
-            .byte S_STAY,S_STAY+D_ROCK2+L_RING,S_RIGH ; 0
-            .byte S_WIGG+P_PLANT1+D_ROCK2+L_RING
+            .byte S_STAY,S_STAY+D_ROCK1,S_WIGG ;+1 (5)
+            .byte S_LEFT+D_ROCK2,S_RIGH,S_STAY+D_ROCK2
+            .byte S_LEFT,S_WIGG+P_PLANT1
+            .byte S_STAY,S_STAY+D_ROCK2,S_RIGH ; 0 (6)
+            .byte S_WIGG+P_PLANT1+D_ROCK2
             .byte S_RIGH+D_ROCK1,S_STAY+D_ROCK2,S_LEFT
-            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_RIGH+D_ROCK1 ;+1
+            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_RIGH+D_ROCK1 ;+1 (7)
             .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY+D_ROCK2,S_RIGH
-            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+L_RING
-            .byte S_STAY+D_ROCK2,S_LEFT ; 0
+            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY
+            .byte S_STAY+D_ROCK2,S_LEFT ; 0 (8) tot: 0
 
-            .byte S_WIGG+P_PLANT1,S_LEFT+D_ROCK1+L_RING,S_STAY,S_RIGH
-            .byte S_WIGG+D_ROCK1,S_STAY,S_STAY+L_RING,S_LEFT ; -1
-            .byte S_LEFT+D_ROCK2,S_RIGH+L_RING,S_STAY+D_ROCK1
-            .byte S_LEFT,S_WIGG+P_PLANT1,S_STAY,S_STAY,S_RIGH ; 0
-            .byte S_WIGG+P_PLANT1,S_RIGH+L_RING,S_STAY
-            .byte S_LEFT,S_WIGG+D_ROCK2,S_STAY+L_RING,S_STAY,S_RIGH ;+1
-            .byte S_RIGH+D_ROCK2,S_LEFT+L_RING,S_STAY+D_ROCK1
+            .byte S_WIGG+P_PLANT1,S_LEFT+D_ROCK1,S_STAY,S_RIGH
+            .byte S_WIGG+D_ROCK1,S_STAY
+            .byte S_STAY,S_LEFT+L_LEVEL ; -1 (9) ***** LEVEL3 ******
+            .byte S_LEFT+D_ROCK2,S_RIGH,S_STAY+D_ROCK1
+            .byte S_LEFT,S_WIGG+P_PLANT1,S_STAY,S_STAY,S_RIGH ; 0 (10)
+            .byte S_WIGG+P_PLANT1,S_RIGH,S_STAY
+            .byte S_LEFT,S_WIGG+D_ROCK2,S_STAY,S_STAY,S_RIGH ;+1 (11)
+            .byte S_RIGH+D_ROCK2,S_LEFT,S_STAY+D_ROCK1
             .byte S_RIGH,S_WIGG+P_PLANT1,S_STAY+D_ROCK2
-            .byte S_STAY,S_LEFT+D_ROCK1+L_RING ; 0
-            .byte S_LEFT+D_ROCK2,S_LEFT+L_RING,S_STAY,S_RIGH+D_ROCK1
-            .byte S_WIGG+D_ROCK2,S_STAY+L_RING
-            .byte S_STAY,S_WIGG+D_ROCK1+P_PLANT1 ; -1
-            .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2,S_STAY+L_RING,S_RIGH
-            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK1,S_STAY+L_RING
-            .byte S_LEFT+D_ROCK1 ; 0
-            .byte S_WIGG+P_PLANT1+D_ROCK2+L_RING
-            .byte S_LEFT+D_ROCK1,S_STAY+D_ROCK2+L_RING,S_RIGH
-            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+L_RING,S_STAY,S_LEFT ; -1
-            .byte S_RIGH,S_LEFT+D_ROCK1+L_RING,S_STAY,S_RIGH
-            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+D_ROCK2+L_RING
-            .byte S_STAY,S_LEFT+D_ROCK2+L_RING ; 0
+            .byte S_STAY,S_LEFT+D_ROCK1 ; 0 (12)
+            .byte S_LEFT+D_ROCK2,S_LEFT,S_STAY,S_RIGH+D_ROCK1
+            .byte S_WIGG+D_ROCK2,S_STAY
+            .byte S_STAY,S_WIGG+D_ROCK1+P_PLANT1 ; -1 (13)
+            .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2,S_STAY,S_RIGH
+            .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK1,S_STAY
+            .byte S_LEFT+D_ROCK1 ; 0 (14)
+            .byte S_WIGG+P_PLANT1+D_ROCK2
+            .byte S_LEFT+D_ROCK1,S_STAY+D_ROCK2,S_RIGH
+            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY,S_LEFT ; -1 (15)
+            .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY,S_RIGH
+            .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+D_ROCK2,S_STAY
+            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (16) ***** LEVEL4 ******
+            ; tot: -2
             
-            .byte S_RIGH,S_RIGH+L_RING,S_STAY+D_ROCK2,S_LEFT
-            .byte S_WIGG,S_STAY+L_RING,S_STAY,S_WIGG ;+1
-            .byte S_LEFT,S_RIGH+P_PLANT1,S_STAY+L_RING
-            .byte S_LEFT,S_WIGG,S_STAY,S_STAY+L_RING,S_RIGH ; 0
+            .byte S_RIGH,S_RIGH,S_STAY+D_ROCK2,S_LEFT
+            .byte S_WIGG,S_STAY,S_STAY,S_WIGG ;+1 (17)
+            .byte S_LEFT,S_RIGH+P_PLANT1,S_STAY
+            .byte S_LEFT,S_WIGG,S_STAY,S_STAY,S_RIGH ; 0 (18)
             .byte S_WIGG,S_RIGH+D_ROCK2+P_PLANT1,S_STAY,S_LEFT
-            .byte S_WIGG,S_STAY,S_STAY+L_RING,S_RIGH ;+1
-            .byte S_RIGH,S_LEFT+L_RING,S_STAY+P_PLANT1,S_RIGH
-            .byte S_WIGG,S_STAY+P_PLANT1,S_STAY,S_LEFT ; 0
-            .byte S_LEFT,S_LEFT+D_ROCK2+L_RING,S_STAY,S_RIGH
-            .byte S_WIGG+P_PLANT1,S_STAY,S_STAY,S_WIGG ; -1
-            .byte S_RIGH+D_SKEL,S_LEFT+P_PLANT1,S_STAY,S_RIGH
-            .byte S_WIGG,S_STAY,S_STAY+L_RING,S_LEFT ; 0
+            .byte S_WIGG,S_STAY,S_STAY,S_RIGH ;+1 (19)
+            .byte S_RIGH,S_LEFT,S_STAY+P_PLANT1,S_RIGH
+            .byte S_WIGG,S_STAY+P_PLANT1
+            .byte S_STAY,S_LEFT+L_LEVEL ; 0 (20) ***** LEVEL5 ******
+            .byte S_LEFT,S_LEFT+D_ROCK2,S_STAY,S_RIGH
+            .byte S_WIGG+P_PLANT1,S_STAY,S_STAY,S_WIGG ; -1 (21)
+            .byte S_RIGH,S_LEFT+P_PLANT1,S_STAY,S_RIGH
+            .byte S_WIGG,S_STAY,S_STAY,S_LEFT ; 0 (22)
             .byte S_WIGG+D_ROCK2,S_LEFT+P_PLANT1,S_STAY
-            .byte S_RIGH,S_WIGG+P_PLANT1,S_STAY,S_STAY,S_LEFT ; -1
-            .byte S_RIGH,S_LEFT+L_RING,S_STAY+D_ROCK2,S_RIGH
-            .byte S_WIGG,S_STAY+P_PLANT1,S_STAY,S_LEFT ; 0
+            .byte S_RIGH,S_WIGG+P_PLANT1,S_STAY,S_STAY,S_LEFT ; -1 (23)
+            .byte S_RIGH,S_LEFT,S_STAY+D_ROCK2,S_RIGH
+            .byte S_WIGG,S_STAY+P_PLANT1
+            .byte S_STAY,S_LEFT+L_LEVEL ; 0 (24) ***** LEVEL6 ******
+            ; tot: 0
             
             .byte S_RIGH,S_RIGH+D_ROCK2+P_PLANT1,S_STAY
-            .byte S_LEFT,S_WIGG+L_RING,S_STAY+P_PLANT1,S_STAY,S_WIGG ; +1
+            .byte S_LEFT,S_WIGG,S_STAY+P_PLANT1
+            .byte S_STAY,S_WIGG ; +1 (25)
             .byte S_RIGH,S_LEFT,S_STAY+P_PLANT1
-            .byte S_RIGH,S_WIGG,S_STAY+L_RING,S_STAY+P_PLANT1,S_LEFT ; 0
+            .byte S_RIGH,S_WIGG,S_STAY,S_STAY+P_PLANT1,S_LEFT ; 0 (26)
             .byte S_WIGG,S_LEFT+P_PLANT1,S_STAY+D_ROCK2
-            .byte S_RIGH,S_WIGG+L_RING,S_STAY+P_PLANT1,S_STAY,S_LEFT ; -1
-            .byte S_RIGH,S_LEFT,S_STAY+P_PLANT1,S_RIGH+L_RING
-            .byte S_WIGG,S_STAY+P_PLANT1,S_STAY,S_LEFT+L_RING ; 0
-            .byte S_RIGH,S_RIGH+D_SKEL,S_STAY+P_PLANT1,S_LEFT+D_ROCK2
-            .byte S_WIGG,S_STAY+L_RING,S_STAY,S_WIGG ;+1
-            .byte S_LEFT,S_RIGH+P_PLANT1,S_STAY+L_RING
-            .byte S_LEFT,S_WIGG,S_STAY,S_STAY,S_RIGH+L_RING ; 0
+            .byte S_RIGH,S_WIGG,S_STAY+P_PLANT1,S_STAY,S_LEFT ; -1 (27)
+            .byte S_RIGH,S_LEFT,S_STAY+P_PLANT1,S_RIGH
+            .byte S_WIGG,S_STAY+P_PLANT1,S_STAY
+            .byte S_LEFT+L_LEVEL ; 0 (28) ***** LEVEL7 ******
+            .byte S_RIGH,S_RIGH,S_STAY+P_PLANT1,S_LEFT+D_ROCK2
+            .byte S_WIGG,S_STAY,S_STAY,S_WIGG ;+1 (29)
+            .byte S_LEFT,S_RIGH+P_PLANT1,S_STAY
+            .byte S_LEFT,S_WIGG,S_STAY,S_STAY,S_RIGH ; 0 (30)
             .byte S_WIGG+D_ROCK2+P_PLANT1
-            .byte S_RIGH,S_STAY+L_RING,S_LEFT+P_PLANT1
-            .byte S_WIGG,S_STAY+L_RING,S_STAY+L_RING,S_RIGH ;+1
-            .byte S_RIGH,S_LEFT,S_STAY+L_RING,S_RIGH+P_PLANT1
-            .byte S_WIGG,S_STAY+L_RING,S_STAY,S_LEFT ; 0
+            .byte S_RIGH,S_STAY,S_LEFT+P_PLANT1
+            .byte S_WIGG,S_STAY,S_STAY,S_RIGH ;+1 (31)
+            .byte S_RIGH,S_LEFT,S_STAY,S_RIGH+P_PLANT1
+            .byte S_WIGG,S_STAY,S_STAY,S_LEFT ; 0 (32)
+            ; tot: +2
 
-YouWonSt:   .byte (25+$80), (15+$80), (21+$80), (32+$80), (23+$80), (15+$80)
-            .byte (14+$80), 0
+; Speed of the levels and description
 
-GameOverSt: .byte (7+$80), (1+$80), (13+$80), (5+$80), (32+$80), (15+$80)
-            .byte (22+$80), (5+$80), (18+$80), 0
-
-MESSAGE:    .byte ('R'-'@'),('A'-'@'),('N'-'@'),('G'-'@'),('E'-'@'),('R'-'@'),0
+LEVELNO = 9
+LevelSpeed: .byte 4             ; L1: Slow speed, easy level
+            .byte 3             ; L2: L1 + More plants, more speed 
+            .byte 3             ; L3: L2 + Gremlins
+            .byte 3             ; L4: L3 + Smaller cavern
+            .byte 2             ; L5: L4 + More speed
+            .byte 2             ; L6: 
+            .byte 1             ; L7: Maximum speed, large cavern
+            .byte 1             ; L8: As L2, maximum speed
+            .byte 1             ; L9: As L3, maximum speed
 
 DefChars:
             EMPTY = 0
@@ -1916,47 +1959,7 @@ DefChars:
             .byte %00000000
             .byte %00000000
             
-            BORDER1L = 14
-            .byte %11010010
-            .byte %10101000
-            .byte %11010101
-            .byte %10100000
-            .byte %11010100
-            .byte %10100001
-            .byte %01010100
-            .byte %10101010
-            
-            BORDER2L = 15
-            .byte %00100100
-            .byte %10000001
-            .byte %00001000
-            .byte %00000010
-            .byte %00100000
-            .byte %00001000
-            .byte %01000000
-            .byte %00010000
-
-            BORDER1R = 16
-            .byte %01001011
-            .byte %00010101
-            .byte %10101011
-            .byte %00000101
-            .byte %00101011
-            .byte %10000101
-            .byte %00101010
-            .byte %01010101
-            
-            BORDER2R = 17
-            .byte %00100100
-            .byte %10000001
-            .byte %00010000
-            .byte %01000000
-            .byte %00000100
-            .byte %00010000
-            .byte %00000010
-            .byte %00001000
-
-            PLANTSHL = 18
+            PLANTSHL = 14
             .byte %00000000
             .byte %11011000
             .byte %00000100
@@ -1966,7 +1969,7 @@ DefChars:
             .byte %01101000
             .byte %00000000
             
-            PLANTSHR = 19
+            PLANTSHR = 15
             .byte %00000000
             .byte %00011010
             .byte %00100000
@@ -1976,7 +1979,7 @@ DefChars:
             .byte %00011101
             .byte %00000000
             
-            RING1 = 20
+            RING1 = 16
             .byte %00011000
             .byte %00100100
             .byte %01000010
@@ -1986,7 +1989,7 @@ DefChars:
             .byte %00100100
             .byte %00011000
             
-            RING2 = 21
+            RING2 = 17
             .byte %00011000
             .byte %00011000
             .byte %00100100
@@ -1996,7 +1999,7 @@ DefChars:
             .byte %00011000
             .byte %00011000
         
-            RING3 = 22
+            RING3 = 18
             .byte %00011000
             .byte %00011000
             .byte %00011000
@@ -2006,7 +2009,7 @@ DefChars:
             .byte %00011000
             .byte %00011000
             
-            RING4 = 23
+            RING4 = 19
             .byte %00011000
             .byte %00011000
             .byte %00011000
@@ -2016,7 +2019,7 @@ DefChars:
             .byte %00011000
             .byte %00011000
             
-            EXPLOSION1=24
+            EXPLOSION1=20
             .byte %10000000     ; Block, ch. 11 (normally M)
             .byte %00100010
             .byte %10010000
@@ -2026,7 +2029,7 @@ DefChars:
             .byte %00110011
             .byte %10000010
             
-            GREMLIN = 25
+            GREMLIN = 21
             .byte %10000001
             .byte %01111110
             .byte %11011011
