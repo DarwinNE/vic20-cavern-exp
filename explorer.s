@@ -1,7 +1,10 @@
-;                V I C   R A N G E R S
+;                V I C    C A V E R N   E X P L O R E R
 ;
-;             by Davide Bucci, August 2018
-
+;                   for the unexpanded Commodore VIC-20
+;
+;                 by Davide Bucci, August-September 2018
+;
+; Assembler: ca65
 
 ; General-use addresses
         GRCHARS1 = $1C00    ; Address of user-defined characters. Since in the
