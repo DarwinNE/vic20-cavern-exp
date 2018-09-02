@@ -30,10 +30,8 @@
 
         Val       = $0      ; Used for the BCD conversion (word)
         Res       = $2      ; The result of the BCD conversion (3 bytes)
-        tmpindex1 = $5      ; Temporary variables (byte)
-        tmpindex2 = $6      ; Temporary variables (byte)
-        JustDrawn = $7
-        ScreenPos = $8      ; The screen vertical position for VICSCRVE (b.)
+        tmpindex1 = $5      ; Temporary variables (byte) in DrawCavern
+
         str1      = $9      ; Address of the string to print with PrintStr (w.)
         tmp4      = $B      ; Temporary (b.)
         ColourRead= $C      ; Colour read by GetChar (b.)
@@ -45,8 +43,8 @@
         SpriteY   = $16     ; Y position (offset in a char) of a sprite (byte)
         CharShr   = $17     ; Employed in LoadSprite (b.)
         CharCode  = $18     ; Employed in DrawChar (b.)
-        PosX      = $19     ; (b.)
-        PosY      = $1A     ; (b.)
+        PosX      = $19     ; Positioning of the current char X (b.)
+        PosY      = $1A     ; Positioning of the current char Y (b.)
         Colour    = $1B     ; Colour to be used by the printing routines (b.)
         CurrentCode=$1C     ; Code being processed for drawing walls (b.)
         Pos       = $1D     ; Used by PrintStr
@@ -79,7 +77,7 @@
         BLENDCHD  = $3B     ; Saved ch. 4 to be blended with sprite 1
         PlantShoot= $3C     ; Position of the plant shoot
         PlantDir  = $3D     ; Direction of the plant shoot (=0 or =128)
-        RingState = $3E     ; bit 7: direction, bits 0 and 1: state
+
         Score     = $3F     ; Current score (w.)
         HiScore   = $41     ; High score (w.)
         CanIncLev = $42     ; =0 if the level can be incremented =128 otherwise
@@ -230,9 +228,9 @@ UpdateSpeedY:
 
 ValidatePos:
             lda ShipPosY
-            cmp #8
+            cmp #60
             bpl @ok
-            lda #8
+            lda #60
             sta ShipPosY
             lda #0
             sta ShipYSpeed
@@ -253,18 +251,17 @@ CheckJoystick:
             beq up
             rts
 
-StartGame:  lda #$2F        ; Turn on the volume, set multicolour add. colour 2
+StartGame:  clc
+            lda #$2F        ; Turn on the volume, set multicolour add. colour 2
             sta VOLUME
             lda #4
             sta Period
             lda #$08
             sta VICCOLOR
             lda #$0
-            sta JustDrawn
             sta CurrentYPos
             sta ShipXSpeed
             sta ShipYSpeed
-            sta CavernPosX
             sta VertPosPx
             sta PlantShoot
             sta PlantDir
@@ -273,8 +270,8 @@ StartGame:  lda #$2F        ; Turn on the volume, set multicolour add. colour 2
             sta Score+1
             sta CanIncLev
             sta Level
-            sta RingState
             sta IRQfreec
+            sta IrqCn
             lda #$80
             sta UpdateWPos
             sta GremlinX
@@ -286,7 +283,10 @@ StartGame:  lda #$2F        ; Turn on the volume, set multicolour add. colour 2
             lda #64
             sta ShipPosX
             sta ShipPosY
+            lda #vpos       ; Put the screen again in the bottom position
+            sta VICSCRVE
             jsr PutRings
+            jsr ChangeRingState
             rts
 
 ; Draw a cavern wall in the position specified in PosX, PosY
@@ -505,11 +505,11 @@ PutSkeleton:
             jsr MoveForward
             jmp NoDecoration
 
-PutPlant1:  lda #PLANT1
+PutPlant1:  lda #PLANT1         ; Position the plant
             sta (POSCHARPT),Y
             lda #GREEN
             sta (POSCOLPT),Y
-            sty PlantPos
+            sty PlantPos        ; Calculate the position of the shoot
             tya
             iny
             adc PlantShoot
@@ -530,27 +530,25 @@ PutPlant1:  lda #PLANT1
             sta EFFECTS
 @exit:      jmp NoRings
 
-PutPlant2:  lda #PLANT2
+PutPlant2:  lda #PLANT2         ; Position the plant
             sta (POSCHARPT),Y
             lda #GREEN
             sta (POSCOLPT),Y
-            sty PlantPos
-            tya
+            sty PlantPos        ; Calculate the position of the shoot
             dey
-            sec
+            tya
             sbc PlantShoot
-            clc
             tay
-            bit PlantDir
+            bit PlantDir        ; Check the direction of the plant's shoot
             bmi @right
             lda #PLANTSHR
-            jmp @cc
+            bne @cc             ; Branch always
 @right:     lda #PLANTSHL
 @cc:        sta (POSCHARPT),Y
             lda #YELLOW
             sta (POSCOLPT),Y
             ldy PlantPos
-            lda SFXCounter
+            lda SFXCounter      ; Put a little SFX on
             beq @exit
             lda EFFECTS
             ora VoiceBase
@@ -611,7 +609,6 @@ Init:       lda #$80        ; Autorepeat on on the keyboard
             beq CenterScreenNTSC    ; Load the screen settings
             bne CenterScreenPAL
 ContInit:   sty VICSCRVE    ; Centre the screen vertically...
-            sty ScreenPos
             stx VICSCRHO    ; ... and horizontally
             lda #$FF        ; Move the character generator address to $1C00
             sta VICCHGEN    ; while leaving ch. 128-255 to their original pos.
@@ -667,7 +664,7 @@ SyncPAL:
 ; Synchronize the timer to the NMI interrupt to a given raster line.
 
 SyncLater:
-            lda #20     ; Synchronization loop
+            lda #155     ; Synchronization loop
 @loopsync:  cmp VICRAST
             bne @loopsync
             rts
@@ -688,8 +685,7 @@ MovCh:      ldx #(LASTCH+1)*8+1
 
 ; Print the values contained in Res+2, Res+1, Res.
 
-PrintRes:   sta Colour
-            ldy #0
+PrintRes:   
             lda Res+2       ; Print all the BCD chars
             jsr PrintBCD
             lda Res+1
@@ -700,7 +696,7 @@ PrintRes:   sta Colour
 PutRings:
             ldy #255
 @loop:      lda NMIHandler,y
-            cmp #10
+            cmp #5
             bmi @noringr
             lda CavernRight,y
             ora #L_RING
@@ -726,11 +722,6 @@ PutRings:
 NMIHandler: pha
             lda #$12
             sta VICSCRHO
-            ;lda #$0A
-            ;sta VICCOLOR
-            ;lda #0
-            ;sta VOICE1
-@nodrawship:
             bit T1CLVIA1
             pla
             rti
@@ -742,7 +733,7 @@ NMIHandler: pha
 ;
 ;
 ; IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ
-vpos=$20
+vpos=$22
 negspeed:  lda #0
             sec
             sbc ShipXSpeed
@@ -765,22 +756,17 @@ posspeed:   asl
             asl
             ora VoiceBase
             sta VOICE1
-            ;lda #5
-            ;sta VICSCRVE
             inc IRQfreec
             lda Win
             beq @nowin
             jmp @cont3
-            
-
 @nowin:     lda SFXCounter  ; Check if we have a SFX on
             bne @FX         ; If no, shut off voice
             lda #0
             sta EFFECTS
             beq @normalcont ; branch always
 @FX:        dec SFXCounter  ; If yes, decrement counter
-@normalcont:  
-            dec IrqCn       ; Execute every PERIOD/60 of second
+@normalcont:dec IrqCn       ; Execute every PERIOD/60 of second
             beq @contint
             jmp @redraw
 @contint:   lda Period      ; Restart the counter for the period
@@ -788,22 +774,18 @@ posspeed:   asl
             inc VertPosPx   ; Since the screen will be scrolled upwards,
             inc VertPosPx   ; compensate the position of the ship by 2 pixels
             inc ShipPosY    ; Increment the position of the ship (with respect
-            lda ShipPosY    ; to the field) up to line 127. Fall down by gravity
-            cmp #127
-            bmi @nopb       ; Check if we past 127th line.
+            bit ShipPosY    ; to the field) up to line 127. Fall down by gravity
+            bpl @nopb       ; Check if we past 127th line.
             lda #127
             sta ShipPosY
-@nopb:      ;lda #0
-            ;sta EFFECTS
-            dec ScreenPos   ; Decrement the screen position so that everything
-            lda ScreenPos   ; scrolls towards the top by 2 raster lines.
-            sta VICSCRVE
+@nopb:      
+            dec VICSCRVE   ; Decrement the screen position so that everything
+            lda VICSCRVE   ; scrolls towards the top by 2 raster lines.
             
-            ;beq @redraw     ; branch always
+            
             cmp #vpos-16    ; 16 x 2 pixels = 4 lines
             bne @redraw
             lda #vpos       ; Put the screen again in the bottom position
-            sta ScreenPos
             sta VICSCRVE
             inc CurrentYPos ; We increase the position in the cavern
             lda #0
@@ -814,7 +796,7 @@ posspeed:   asl
 @greml:     bit GremlinX
             bmi @redraw
             jsr UpdateGremlin
-@redraw:    lda ScreenPos
+@redraw:    lda VICSCRVE
             cmp #vpos-15
             bne @chk
             lda IrqCn
@@ -859,7 +841,6 @@ posspeed:   asl
             sta CurrXPosR
             lda #128
             sta UpdateWPos
-            sta JustDrawn
 @endscroll:
 @cont3:     lda Win
             bne @nodrawship
@@ -899,29 +880,12 @@ UpdatePlants:
             sta SFXCounter
             rts
 
-; Change the ring state in the following sequence:
-; 0 - 1 - 2 - 3 - 2 - 1  and then restart.
-
-ChangeRingState:
-            bit RingState       ; Test the direction of the ring state sequence
-            bmi @decrease
-            inc RingState       ; Increase
-            lda RingState
-            cmp #$3             ; If we get to 3, change direction
-            bne @exit
-            lda #($80+$3)
-            sta RingState
-            bne @exit           ; Branch always
-@decrease:  dec RingState       ; Decrease
-            cmp #$80
-            bne @exit           ; If we get to 0, change direction
-            lda #$0
-            sta RingState
-@exit:                          ; No rts here!
 
 ; Load the current shape of the ring in the generic character, following the
-; value of RingState (from 0 to 3).
+; value of PlantShoot (from 0 to 3).
 
+ChangeRingState:
+            lda PlantShoot
             and #$03
             clc
             adc #RING1
@@ -946,7 +910,7 @@ CheckCrash:
             iny
             jsr GetChar
             sta BLENDCHD
-                        rts
+                    
 @skip:      
             ldx BLENDCHA
             cpx #EMPTY
@@ -983,6 +947,8 @@ IncrementLevel:
             lda #WHITE
             sta (POSCOLPT),Y
             dey
+            bit Direction
+            bmi @normal
             lda CanIncLev
             bne @normal
             lda #10
@@ -1007,26 +973,11 @@ UpdateGremlin:
             sec
             sbc #5
             sta GremlinY
-            tay
-            lda DrawCavern,Y      ; Use code as random numbers!
-            cmp #127
-            bmi @positive
-@negative:  dex 
-            dey
-            jsr GetChar
-            iny
-            cmp #EMPTY
-            bne @positive
-            stx GremlinX
+            and #1
+            bne @dec
+            inc GremlinX
             rts
-@positive:  inc GremlinX
-            inx 
-            dey
-            jsr GetChar
-            iny
-            cmp #EMPTY
-            bne @positive
-            stx GremlinX
+@dec:       dec GremlinX
             rts
 
 DrawGremlin:
@@ -1057,7 +1008,7 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             and #7
             sta SpriteY
             lda ShipPosX
-            lsr
+            lsr 
             lsr
             lsr
             tax
@@ -1072,7 +1023,7 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             stx ShipChrX
 NormalShip: lda #SHIP
             sta CharCode
-            lda #WHITE
+            lda #MAGENTA
             sta Colour
             jsr LoadAppropriateSprite
             jsr CheckCrash
@@ -1152,7 +1103,10 @@ Collision:  cpx #RING
 
 
 ; Stop the game, explode the ship and die :-(
-Die:        lda #$FF
+Die:        bit Win         ; The routine can be called twice if the collision
+            bpl @first      ; is done in multiple characters of a sprite.
+            rts             ; Exit if it is the second call!
+@first:     lda #$FF
             sta Win         ; Stop the game
             sta VICCOLOR    ; Light yellow screen, yellow border
             lda #192
@@ -1190,6 +1144,52 @@ Die:        lda #$FF
             lda (CavernPTR),y
             ora #D_SKEL
             sta (CavernPTR),y
+            LDA Score+1  ; compare high bytes
+            CMP HiScore+1
+            BCC @label2 ; if NUM1H < NUM2H then NUM1 < NUM2
+            BNE @label1 ; if NUM1H <> NUM2H then NUM1 > NUM2 (so NUM1 >= NUM2)
+            LDA Score  ; compare low bytes
+            CMP HiScore
+            BCC @label2 ; if NUM1L < NUM2L then NUM1 < NUM2
+@label1:    lda Score+1
+            sta HiScore+1
+            lda Score
+            sta HiScore
+@label2:
+            ldx #6
+            ldy #7
+            lda #YELLOW
+            sta Colour
+            lda #<ScoreMSG
+            sta str1
+            lda #>ScoreMSG
+            sta str1+1
+            jsr PrintStr
+            lda Score       ; Load the current score and convert it to BCD
+            sta Val
+            lda Score+1
+            sta Val+1
+            jsr Bin2BCD
+            ldx #5
+            iny
+            jsr PrintRes
+            ldx #5
+            iny 
+            lda #CYAN
+            sta Colour
+            lda #<HiScoreMSG
+            sta str1
+            lda #>HiScoreMSG
+            sta str1+1
+            jsr PrintStr
+            lda HiScore       ; Load the current score and convert it to BCD
+            sta Val
+            lda HiScore+1
+            sta Val+1
+            jsr Bin2BCD
+            ldx #5
+            iny
+            jsr PrintRes
             rts
 
 ; Add the value contained in A to the current score
@@ -1637,23 +1637,23 @@ CavernRight:
             .byte S_WIGG+P_PLANT2+D_ROCK1
             .byte S_LEFT+D_ROCK1
             .byte S_LEFT+D_ROCK2,S_RIGH+L_LEVEL ; -1 (9) ***** LEVEL3 ******
-            .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY+P_GREML
-            .byte S_RIGH+D_ROCK1,S_WIGG+P_GREML
+            .byte S_RIGH+D_ROCK2+P_GREML,S_LEFT+D_ROCK1,S_STAY
+            .byte S_RIGH+D_ROCK1,S_WIGG
             .byte S_STAY,S_STAY+D_ROCK1,S_LEFT ; 0 (10)
-            .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK2
-            .byte S_WIGG+P_PLANT2+D_ROCK1+P_GREML
+            .byte S_WIGG+D_ROCK1+P_GREML,S_LEFT+D_ROCK2,S_STAY,S_RIGH+D_ROCK2
+            .byte S_WIGG+P_PLANT2+D_ROCK1
             .byte S_STAY+D_ROCK1,S_STAY,S_LEFT+D_ROCK2 ; -1 (11)
             .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY+D_ROCK1
             .byte S_RIGH,S_WIGG+D_ROCK1,S_STAY,S_STAY+D_ROCK2
             .byte S_LEFT+D_ROCK1+P_GREML ; 0 (12)
             .byte S_RIGH,S_RIGH+D_ROCK2,S_STAY+D_ROCK1,S_LEFT
-            .byte S_WIGG,S_STAY+D_ROCK2+P_GREML
-            .byte S_STAY,S_WIGG ;+1 (13)
-            .byte S_LEFT+D_ROCK1,S_RIGH,S_STAY+D_ROCK2+P_GREML
-            .byte S_LEFT+D_ROCK1,S_WIGG+P_PLANT2+P_GREML
+            .byte S_WIGG,S_STAY+D_ROCK2
+            .byte S_STAY,S_WIGG+P_GREML ;+1 (13)
+            .byte S_LEFT+D_ROCK1,S_RIGH,S_STAY+D_ROCK2
+            .byte S_LEFT+D_ROCK1,S_WIGG+P_PLANT2
             .byte S_STAY+D_ROCK1,S_STAY+D_ROCK1,S_RIGH+P_GREML ; 0 (14)
-            .byte S_WIGG,S_RIGH+D_ROCK1,S_STAY,S_LEFT,S_WIGG+P_GREML
-            .byte S_STAY+D_ROCK2,S_STAY,S_RIGH+D_ROCK2+P_GREML ;+1 (15)
+            .byte S_WIGG,S_RIGH+D_ROCK1,S_STAY,S_LEFT,S_WIGG
+            .byte S_STAY+D_ROCK2,S_STAY,S_RIGH+D_ROCK2 ;+1 (15)
             .byte S_RIGH+D_ROCK1,S_LEFT+P_PLANT2+D_ROCK2,S_STAY
             .byte S_RIGH,S_WIGG,S_STAY+P_GREML
             .byte S_STAY+D_ROCK2
@@ -1805,6 +1805,11 @@ CavernLeft:
             .byte S_WIGG,S_STAY,S_STAY,S_LEFT ; 0 (32)
             ; tot: +2
 
+HiScoreMSG: .byte ('H'-'@'),('I'-'@')
+ScoreMSG:
+            .byte ('S'-'@'),('C'-'@'),('O'-'@'),('R'-'@'),('E'-'@')
+            .byte 0
+
 ; Speed of the levels and description
 
 LEVELNO = 9
@@ -1890,8 +1895,8 @@ DefChars:
             .byte %00010000
 
             SHIP = 7
-            .byte %11000011
-            .byte %11000011
+            .byte %00011000
+            .byte %10000001
             .byte %01111110
             .byte %00111100
             .byte %00011000
@@ -1920,14 +1925,14 @@ DefChars:
             .byte %00000000
 
             PLANT1 = 10
-            .byte %10000000
-            .byte %11000000
-            .byte %11111100
-            .byte %10101010
-            .byte %00100101
-            .byte %00100101
-            .byte %00001001
-            .byte %00010010
+            .byte %00000001
+            .byte %00000010
+            .byte %00011100
+            .byte %01100010
+            .byte %01000101
+            .byte %01000101
+            .byte %00100010
+            .byte %00010000
 
             PLANT2 = 11
             .byte %00000111
