@@ -355,7 +355,9 @@ loop:       sty tmpindex1       ; Start of the main loop
 @no3:       jsr StepRight       ; Code 11: StepRight + StepLeft
             OneLine
             jsr StepLeft
-@cont:      
+@cont:      lda CurrCode
+            and #%11111100      ; Shortcut!
+            beq NoRings
             lda CurrCode        ; Handle the current decorations
             and #D_MASK         ; (rocks and skeletons in the walls)
             beq NoDecoration
@@ -398,7 +400,6 @@ NoRings:
             ldy tmpindex1
             iny
             jmp loop
-
 exitloop:   
             rts
 
@@ -778,7 +779,7 @@ IrqHandler: pha
             tya
             pha
             lda #09
-            sta VICCOLOR
+            ;sta VICCOLOR
             lda #63         ; Switch "off" the screen, shifting all to right
             sta VICSCRHO
             lda ShipXSpeed
