@@ -91,7 +91,7 @@
         PlantPos  = $47     ; Temporary for PutPlant1/2 (b.)
         GremlinX  = $48     ; X position of the gremlin (b.)
         GremlinY  = $49     ; Y position of the gremlin (b.)
-    
+
         ; Video settings (those things that depend between NTSC/PAL
         Vpos      = $50     ; Vertical position of the screen (top, b.)
         Vposm15   = $51     ; Same as Vpos but minus 15 :-)  (b.)
@@ -128,7 +128,7 @@
         T1LHVIA1   = $9117
         IFRVIA1    = $911D      ; Interrupt flags
         IERVIA1    = $911E      ; Interrupt enable
-        
+
         PORTBVIA2  = $9120      ; Port B 6522 2 value (joystick)
         PORTBVIA2d = $9122      ; Port B 6522 2 direction (joystick
         T1CLVIA2   = $9124
@@ -316,7 +316,7 @@ DrawCavern:
             dex
             bit UpdateWPos      ; Skip the adjust of the position?
             bmi loop
-            lda (CavernPTR),y   ; Read the first step and adjust the position 
+            lda (CavernPTR),y   ; Read the first step and adjust the position
             and #S_MASK         ; for the next run
             cmp #S_RIGH
             bne @nn2
@@ -400,7 +400,7 @@ NoRings:
             ldy tmpindex1
             iny
             jmp loop
-exitloop:   
+exitloop:
             rts
 
 
@@ -488,7 +488,7 @@ PutRock2:   lda #ROCK2
             jsr MoveForward
             jmp NoDecoration
 
-PutRing:    
+PutRing:
             lda #RING
             jsr MoveForward
             sta (POSCHARPT),Y
@@ -719,7 +719,7 @@ MovCh:      ldx #(LASTCH+1)*8+1
 
 ; Print the values contained in Res+2, Res+1, Res.
 
-PrintRes:   
+PrintRes:
             lda Res+2       ; Print all the BCD chars
             jsr PrintBCD
             lda Res+1
@@ -768,10 +768,66 @@ NMIHandler: pha
 ;
 ; IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ
 
-negspeed:  lda #0
+; Implement some functions as macros, as they are called only once and they
+; deserve to be inlined so to save jrs+rts (12 cycles, i.e. 12 µs)
+
+.macro DrawGremlin
+            ldy GremlinY
+            beq @deactivate
+            ldx GremlinX
+            lda #BLUE
+            sta Colour
+            lda #GREMLIN
+            jsr DrawChar
+            jmp @skipm
+@deactivate:
+            lda #80
+            sta GremlinX
+@skipm:
+.endmacro
+
+.macro UpdatePlants
+            bit PlantDir    ; Update the position of plant shoots
+            bmi @negshoot
+            inc PlantShoot
+            lda PlantShoot
+            cmp #4
+            bne @nochange   ; Change the direction of the shoot
+            lda #128
+            sta PlantDir
+            jmp @nochange
+@negshoot:  dec PlantShoot
+            lda PlantShoot
+            bne @nochange
+            lda #0
+            sta PlantDir
+@nochange:  asl
+            asl
+            sta EFFECTS
+            lda #10
+            sta SFXCounter
+.endmacro
+
+.macro UpdateGremlin
+            ldx GremlinX
+            lda GremlinY
+            sec
+            sbc #5
+            sta GremlinY
+            and #1
+            bne @dec
+            inc GremlinX
+            beq @skip       ; Branch always
+@dec:       dec GremlinX
+@skip:
+.endmacro
+
+negspeed:   lda #0
             sec
             sbc ShipXSpeed
             jmp posspeed
+
+stopgame:   jmp nodrawship
 
 IrqHandler: pha
             txa             ; Save registers
@@ -791,10 +847,9 @@ posspeed:   asl
             ora VoiceBase
             sta VOICE1
             inc IRQfreec
-            lda Win
-            beq @nowin
-            jmp @cont3
-@nowin:     lda SFXCounter  ; Check if we have a SFX on
+            bit Win
+            bmi stopgame
+            lda SFXCounter  ; Check if we have a SFX on
             bne @FX         ; If no, shut off voice
             lda #0
             sta EFFECTS
@@ -814,7 +869,6 @@ posspeed:   asl
             sta ShipPosY
 @nopb:      dec VICSCRVE   ; Decrement the screen position so that everything
             lda VICSCRVE   ; scrolls towards the top by 2 raster lines.
-            
             cmp Vposm16    ; 16 x 2 pixels = 4 lines
             bne @redraw
             lda Vpos       ; Put the screen again in the bottom position
@@ -825,18 +879,18 @@ posspeed:   asl
             lda CanIncLev   ; And we decrement the counter for the dead time
             beq @greml      ; for incrementing the level
             dec CanIncLev
-@greml:     bit GremlinX
+@greml:     bit GremlinX    ; See if the gremlin position has to be updated
             bmi @redraw
-            jsr UpdateGremlin
-@redraw:    lda VICSCRVE
-            cmp Vposm15
+            UpdateGremlin   ; Inline a macro and save 12 cycles
+@redraw:    lda VICSCRVE    ; Check if in the next iteration we should calculate
+            cmp Vposm15     ; the shift of the cavern's walls.
             bne @chk
             lda IrqCn
             cmp #1
             bne @chk        ; Here we must prepare the shift in the walls for
             lda #$00        ; the next step.
             sta UpdateWPos
-            jsr UpdatePlants
+            UpdatePlants    ; Macro call that will be inlined
             jsr ChangeRingState
 @chk:       jsr CLSA        ; Launch a complete redraw of the cavern
                             ; Prepare for the left wall
@@ -852,7 +906,7 @@ posspeed:   asl
             sta CavernPosX
             lda #128
             sta Direction
-            clc             ; TO DO: check if useful!!!
+            ;clc             ; check if useful!!! (It is not!)
             jsr DrawCavern  ; Draw the left wall of the cavern
             lda CavernPosX
             sta CurrXPosL
@@ -873,16 +927,11 @@ posspeed:   asl
             lda #128
             sta UpdateWPos
 @endscroll:
-@cont3:     lda Win
-            bne @nodrawship
             bit GremlinX
             bmi @nogremlin
-            jsr DrawGremlin
-@nogremlin:
-            jsr DrawShip
-@nodrawship:
-
-@nomusic1:  lda #$08
+            DrawGremlin
+@nogremlin: jsr DrawShip
+nodrawship: lda #$08
             sta VICCOLOR
             pla             ; Restore registers
             tay
@@ -890,29 +939,6 @@ posspeed:   asl
             tax
             pla
             jmp $EABF       ; Jump to the standard IRQ handling routine
-
-UpdatePlants:
-            bit PlantDir    ; Update the position of plant shoots
-            bmi @negshoot
-            inc PlantShoot
-            lda PlantShoot
-            cmp #4
-            bne @nochange   ; Change the direction of the shoot
-            lda #128
-            sta PlantDir
-            jmp @nochange
-@negshoot:  dec PlantShoot
-            lda PlantShoot
-            bne @nochange
-            lda #0
-            sta PlantDir
-@nochange:  asl
-            asl
-            sta EFFECTS
-            lda #10
-            sta SFXCounter
-            rts
-
 
 ; Load the current shape of the ring in the generic character, following the
 ; value of PlantShoot (from 0 to 3).
@@ -923,26 +949,41 @@ ChangeRingState:
             adc #RING1
             tax
             ldy #RING
-            jmp CopyChar
+                        ; no rts here, as CopyChar is used afterwards
 
-CheckCrash: 
+; Prepare for a copy of the memory of the character to be blended in the sprite
+; 1 area.
+; X = the caracter to be blended (source)
+; Y = the sprite character (destination)
+CopyChar:
+            jsr PrepareCopy
+CopyMem:    lda (SOURCE),y
+            sta (DEST),y
+            dey
+            bne CopyMem
+            lda (SOURCE),y
+            sta (DEST),y
+            rts
+
+CheckCrash:
             ldx ShipChrX
             ldy ShipChrY
-            jsr GetChar
+            jsr PosChar
+            ldy #0
+            lda (POSCHARPT),y
             cmp #SPRITE1A
             beq @skip
             sta BLENDCHA
             iny
-            jsr GetChar
-            sta BLENDCHB
-            dey
-            inx
-            jsr GetChar
+            lda (POSCHARPT),y
             sta BLENDCHC
+            ldy #16
+            lda (POSCHARPT),y
+            sta BLENDCHB
             iny
-            jsr GetChar
+            lda (POSCHARPT),y
             sta BLENDCHD
-@skip:      
+@skip:  
             ldx BLENDCHA
             cpx #EMPTY
             beq @next1
@@ -998,32 +1039,7 @@ IncrementLevel:
 @normal:    clc
             jmp NoRings
 
-UpdateGremlin:
-            ldx GremlinX
-            lda GremlinY
-            sec
-            sbc #5
-            sta GremlinY
-            and #1
-            bne @dec
-            inc GremlinX
-            rts
-@dec:       dec GremlinX
-            rts
 
-DrawGremlin:
-            ldx GremlinX
-            ldy GremlinY
-            cpy #0
-            beq @deactivate
-            lda #BLUE
-            sta Colour
-            lda #GREMLIN
-            jmp DrawChar
-@deactivate:
-            lda #80
-            sta GremlinX
-            rts
 
 ; Draw the player's ship
 
@@ -1037,7 +1053,7 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             and #7
             sta SpriteY
             lda ShipPosX
-            lsr 
+            lsr
             lsr
             lsr
             tax
@@ -1126,10 +1142,10 @@ Collision:  cpx #RING
             tay
             lda CavernLeft,y
             and #%00111111
-            sta CavernLeft,y 
+            sta CavernLeft,y
             lda CavernRight,y
             and #%00111111
-            sta CavernRight,y 
+            sta CavernRight,y
             lda #10
             sta SFXCounter
             lda #110
@@ -1211,7 +1227,7 @@ Die:        bit Win         ; The routine can be called twice if the collision
             iny
             jsr PrintRes
             ldx #5
-            iny 
+            iny
             lda #CYAN
             sta Colour
             lda #<HiScoreMSG
@@ -1425,7 +1441,7 @@ OrMem:      lda (SOURCE),y
             ora (DEST),y
             sta (DEST),y
             rts
-            
+
 PrepareCopy:
             stx CharCode
             sty TempOr
@@ -1444,20 +1460,8 @@ PrepareCopy:
             ldy #7
             rts
 
-; Prepare for a copy of the memory of the character to be blended in the sprite
-; 1 area.
-; X = the caracter to be blended (source)
-; Y = the sprite character (destination)
-CopyChar:
-            jsr PrepareCopy
-CopyMem:    lda (SOURCE),y
-            sta (DEST),y
-            dey
-            bne CopyMem
-            lda (SOURCE),y
-            sta (DEST),y
-            rts
-            
+
+
 ; Print a string (null terminated) whose address is contained in str1 and
 ; str1+1 at the position given by X and Y pointers
 
@@ -1496,7 +1500,7 @@ CLS:
             sta MEMSCR+size*5-1,X
             sta MEMSCR+size*6-1,X
             sta MEMSCR+size*7-1,X
-            sta MEMSCR+size*8-1,X 
+            sta MEMSCR+size*8-1,X
             sta MEMSCR+size*9-1,X
             sta MEMSCR+size*10-1,X
             sta MEMSCR+size*11-1,X
@@ -1630,7 +1634,7 @@ CavernRight:
             .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY+D_ROCK1
             .byte S_RIGH,S_WIGG+P_PLANT2
             .byte S_STAY+D_ROCK1,S_STAY,S_LEFT ; 0 (8) net: 0
-            
+
             .byte S_WIGG+D_ROCK1,S_RIGH+D_ROCK2,S_STAY+D_ROCK1,S_LEFT
             .byte S_WIGG+P_PLANT2+D_ROCK1
             .byte S_LEFT+D_ROCK1
@@ -1657,7 +1661,7 @@ CavernRight:
             .byte S_STAY+D_ROCK2
             .byte S_STAY+D_ROCK1+L_LEVEL+P_GREML ; +1 (16) ***** LEVEL4 ******
             ; tot: +1
-            
+
             .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK1,S_RIGH+D_ROCK2
             .byte S_WIGG+P_PLANT2+D_ROCK1,S_STAY
             .byte S_STAY,S_WIGG+P_PLANT2+D_ROCK2 ; -1 (17)
@@ -1683,14 +1687,14 @@ CavernRight:
             .byte S_STAY,S_RIGH+D_ROCK2 ;+1 (23)
             .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY+D_ROCK1
             .byte S_RIGH+P_PLANT2+D_ROCK2
-            .byte S_WIGG+P_PLANT2,S_STAY+D_ROCK2+D_ROCK1
+            .byte S_WIGG+P_PLANT2,S_STAY+D_ROCK2
             .byte S_STAY+D_ROCK1
             .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (24) ***** LEVEL6 ****** tot: 0
 
             .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2+P_PLANT2,S_STAY
             .byte S_RIGH+D_ROCK1,S_WIGG
             .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2+P_PLANT2
-            .byte S_LEFT ; -1 (25) 
+            .byte S_LEFT ; -1 (25)
             .byte S_LEFT+D_ROCK1+P_PLANT2,S_RIGH,S_STAY
             .byte S_LEFT,S_WIGG+D_ROCK1
             .byte S_STAY+P_PLANT2,S_STAY+D_ROCK2+P_PLANT2,S_RIGH ; 0 (26)
@@ -1712,8 +1716,8 @@ CavernRight:
             .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY+D_ROCK1
             .byte S_RIGH,S_RIGH+D_ROCK1
             .byte S_STAY,S_STAY+D_ROCK2,S_LEFT ; 0 (32) tot: -1
-            
-CavernLeft: 
+
+CavernLeft:
             .byte S_LEFT,S_LEFT,S_STAY,S_RIGH
             .byte S_WIGG,S_STAY
             .byte S_STAY,S_WIGG ; -1 (1)
@@ -1761,7 +1765,7 @@ CavernLeft:
             .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+D_ROCK2,S_STAY
             .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (16) ***** LEVEL4 ******
             ; tot: -2
-            
+
             .byte S_RIGH,S_RIGH,S_STAY+D_ROCK2,S_LEFT
             .byte S_WIGG,S_STAY,S_STAY,S_WIGG ;+1 (17)
             .byte S_LEFT,S_RIGH+P_PLANT1,S_STAY
@@ -1781,7 +1785,7 @@ CavernLeft:
             .byte S_WIGG,S_STAY+P_PLANT1
             .byte S_STAY,S_LEFT+L_LEVEL ; 0 (24) ***** LEVEL6 ******
             ; tot: 0
-            
+
             .byte S_RIGH,S_RIGH+D_ROCK2+P_PLANT1,S_STAY
             .byte S_LEFT,S_WIGG,S_STAY+P_PLANT1
             .byte S_STAY,S_WIGG ; +1 (25)
@@ -1812,11 +1816,11 @@ ScoreMSG:
 
 LEVELNO = 9
 LevelSpeed: .byte 4             ; L1: Slow speed, easy level
-            .byte 3             ; L2: L1 + More plants, more speed 
+            .byte 3             ; L2: L1 + More plants, more speed
             .byte 3             ; L3: L2 + Gremlins
             .byte 3             ; L4: L3 + Smaller cavern
             .byte 2             ; L5: L4 + More speed
-            .byte 2             ; L6: 
+            .byte 2             ; L6:
             .byte 1             ; L7: Maximum speed, large cavern
             .byte 1             ; L8: As L2, maximum speed
             .byte 1             ; L9: As L3, maximum speed
@@ -1941,7 +1945,7 @@ DefChars:
             .byte %00100100
             .byte %01001000
             .byte %00010000
-            
+
             SKELETON1 = 12
             .byte %00011100
             .byte %00111110
@@ -1961,7 +1965,7 @@ DefChars:
             .byte %10000000
             .byte %00000000
             .byte %00000000
-            
+
             PLANTSHL = 14
             .byte %00000000
             .byte %11011000
@@ -1971,7 +1975,7 @@ DefChars:
             .byte %00000100
             .byte %01101000
             .byte %00000000
-            
+
             PLANTSHR = 15
             .byte %00000000
             .byte %00011010
@@ -1981,7 +1985,7 @@ DefChars:
             .byte %00100000
             .byte %00011101
             .byte %00000000
-            
+
             RING1 = 16
             .byte %00011000
             .byte %00100100
@@ -1991,7 +1995,7 @@ DefChars:
             .byte %01000010
             .byte %00100100
             .byte %00011000
-            
+
             RING2 = 17
             .byte %00011000
             .byte %00011000
@@ -2001,7 +2005,7 @@ DefChars:
             .byte %00100100
             .byte %00011000
             .byte %00011000
-        
+
             RING3 = 18
             .byte %00011000
             .byte %00011000
@@ -2011,7 +2015,7 @@ DefChars:
             .byte %00011000
             .byte %00011000
             .byte %00011000
-            
+
             RING4 = 19
             .byte %00011000
             .byte %00011000
@@ -2021,7 +2025,7 @@ DefChars:
             .byte %00011000
             .byte %00011000
             .byte %00011000
-            
+
             EXPLOSION1=20
             .byte %10000000     ; Block, ch. 11 (normally M)
             .byte %00100010
@@ -2031,7 +2035,7 @@ DefChars:
             .byte %00110000
             .byte %00110011
             .byte %10000010
-            
+
             GREMLIN = 21
             .byte %10000001
             .byte %01111110
@@ -2041,7 +2045,7 @@ DefChars:
             .byte %00111100
             .byte %01000010
             .byte %10000001
-            
+
             LASTCH = GREMLIN
             SPRITE1A = LASTCH+1
             SPRITE1B = LASTCH+2
@@ -2050,5 +2054,5 @@ DefChars:
 
             ; The ring character is changed during the game (it can be
             ; RING1, RING2, RING3 and RING4.
-            
+
             RING     = LASTCH+5
