@@ -74,13 +74,13 @@
         Direction = $33     ; =0 if right border =128 if left border (b. cavern)
         SOURCE    = $34     ; Source pointer for CopyMem (w.)
         DEST      = $36     ; Destination pointer for CopyMem (w.)
-        BLENDCHA  = $38     ; Saved ch. 1 to be blended with sprite 1
-        BLENDCHB  = $39     ; Saved ch. 2 to be blended with sprite 1
-        BLENDCHC  = $3A     ; Saved ch. 3 to be blended with sprite 1
-        BLENDCHD  = $3B     ; Saved ch. 4 to be blended with sprite 1
-        PlantShoot= $3C     ; Position of the plant shoot
-        PlantDir  = $3D     ; Direction of the plant shoot (=0 or =128)
-
+        BLENDCHA  = $38     ; Saved ch. 1 to be blended with sprite 1 (b.)
+        BLENDCHB  = $39     ; Saved ch. 2 to be blended with sprite 1 (b.)
+        BLENDCHC  = $3A     ; Saved ch. 3 to be blended with sprite 1 (b.)
+        BLENDCHD  = $3B     ; Saved ch. 4 to be blended with sprite 1 (b.)
+        PlantShoot= $3C     ; Position of the plant shoot (b.)
+        PlantDir  = $3D     ; Direction of the plant shoot (=0 or =128) (b.)
+        TmpChar   = $3E     ; Temporary for DrawCharFast (b.)
         Score     = $3F     ; Current score (w.)
         HiScore   = $41     ; High score (w.)
         CanIncLev = $42     ; =0 if the level can be incremented =128 otherwise
@@ -92,6 +92,14 @@
         GremlinX  = $48     ; X position of the gremlin (b.)
         GremlinY  = $49     ; Y position of the gremlin (b.)
     
+        ; Video settings (those things that depend between NTSC/PAL
+        Vpos      = $50     ; Vertical position of the screen (top, b.)
+        Vposm15   = $51     ; Same as Vpos but minus 15 :-)  (b.)
+        Vposm16   = $52     ; Vposm15 minus one (b.)
+        RasterlNMI= $53     ; Raster line for the NMI interrupt (b.)
+        NormSCRpos= $54     ; Centered position of the screen (b.)
+        MaxShipPos= $55     ; Maximum vertical position of the ship (b.)
+        CavernSize= $56     ; Number of lines of the cavern (b.)
 
 
         INITVALC=$ede4
@@ -286,7 +294,7 @@ StartGame:  clc
             lda #64
             sta ShipPosX
             sta ShipPosY
-            lda #vpos       ; Put the screen again in the bottom position
+            lda Vpos       ; Put the screen again in the bottom position
             sta VICSCRVE
             jsr PutRings
             jsr ChangeRingState
@@ -322,18 +330,7 @@ loop:       sty tmpindex1       ; Start of the main loop
             sta CurrCode
             ldy PosY            ; Get the current vertical position
             jsr PosChar
-            ldy #2
-            lda CurrCode        ; Handle the current decorations
-            and #D_MASK         ; (rocks and skeletons in the walls)
-            beq NoDecoration
-            cmp #D_ROCK1
-            bne @nd1
-            jmp PutRock1
-@nd1:       cmp #D_ROCK2
-            bne @sk
-            jmp PutRock2
-@sk:        jmp PutSkeleton
-NoDecoration:                   ; End of the decoration code
+            ldy #2              ; Starting at 2 allows to avoid negative values
             lda CurrCode
             clv                 ; Clear the oVerflow bit (to use bvc as "bra")
             ; clc               ; The carry is clear after PosChar
@@ -358,7 +355,19 @@ NoDecoration:                   ; End of the decoration code
 @no3:       jsr StepRight       ; Code 11: StepRight + StepLeft
             OneLine
             jsr StepLeft
-@cont:      lda CurrCode        ; Handle plants, surface decorations, gremlins
+@cont:      
+            lda CurrCode        ; Handle the current decorations
+            and #D_MASK         ; (rocks and skeletons in the walls)
+            beq NoDecoration
+            cmp #D_ROCK1
+            bne @nd1
+            jmp PutRock1
+@nd1:       cmp #D_ROCK2
+            bne @sk
+            jmp PutRock2
+@sk:        jmp PutSkeleton
+NoDecoration:                   ; End of the decoration code
+            lda CurrCode        ; Handle plants, surface decorations, gremlins
             and #P_MASK
             beq NoSurface
             cmp #P_PLANT1
@@ -384,7 +393,7 @@ NoRings:
             clc                 ; The carry should be always clear here
             adc #4              ; Every step is 4 lines
             sta PosY
-            cmp #30             ; Check if we got to the end of the screen
+            cmp CavernSize      ; Check if we got to the end of the screen
             bcs exitloop
             ldy tmpindex1
             iny
@@ -565,21 +574,15 @@ PutPlant2:  lda #PLANT2         ; Position the plant
 ;
 ; INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT
 
-SyncNTSC:
-            ; Data for NTSC machines. See for example:
-            ; http://www.antimon.org/dl/c64/code/stable.txt
-            LINES_NTSC = 261
-            CYCLES_PER_LINE_NTSC = 65
-            TIMER_VALUE_NTSC = LINES_NTSC * CYCLES_PER_LINE_NTSC - 2
-@loopsync:  lda VICRAST     ; Synchronization loop
-            cmp #70
-            bne @loopsync
-            lda #<TIMER_VALUE_NTSC
-            ldx #>TIMER_VALUE_NTSC
-            jmp ContInit1
 ; Screen init value for PAL and NTSC
 
 CenterScreenPAL:
+            lda #30
+            sta CavernSize
+            lda #$22
+            sta Vpos
+            lda #155
+            sta RasterlNMI
             lda #$3E        ; Set a 31 row-high column
             sta VICROWNC
             ldx #$12
@@ -587,12 +590,17 @@ CenterScreenPAL:
             jmp ContInit
 
 CenterScreenNTSC:
+            lda #25
+            sta CavernSize
+            lda #22
+            sta Vpos
+            lda #130
+            sta RasterlNMI
             lda #$36        ; Set a 27 row-high column
             sta VICROWNC
             ldx #$0A
             ldy #$10
             jmp ContInit
-
 
 Init:       lda #$80        ; Autorepeat on on the keyboard
             sta REPEATKE
@@ -607,12 +615,19 @@ Init:       lda #$80        ; Autorepeat on on the keyboard
             sta IERVIA1
             sta IFRVIA1
             sta PORTBVIA2d  ; Prepare VIAs for joystick
-            cmp #$05        ; Determine if we run on a PAL or NTSC machine
             lda INITVALC
+            cmp #$05        ; Determine if we run on a PAL or NTSC machine
             beq CenterScreenNTSC    ; Load the screen settings
             bne CenterScreenPAL
 ContInit:   sty VICSCRVE    ; Centre the screen vertically...
             stx VICSCRHO    ; ... and horizontally
+            stx NormSCRpos
+            lda Vpos
+            sec
+            sbc #15
+            sta Vposm15
+            sta Vposm16
+            dec Vposm16
             lda #$FF        ; Move the character generator address to $1C00
             sta VICCHGEN    ; while leaving ch. 128-255 to their original pos.
             jsr MovCh       ; Load the graphic chars
@@ -624,8 +639,8 @@ ContInit:   sty VICSCRVE    ; Centre the screen vertically...
             cmp #$05
             beq SyncNTSC    ; Load the screen settings
             bne SyncPAL
-ContInit1:  stx T1CHVIA2    ; Set up the timer and start it
-            sta T1LLVIA2
+ContInit1:  sta T1LLVIA2
+            stx T1CHVIA2    ; Set up the timer and start it
             sta T1LLVIA1
             jsr SyncLater
             stx T1CHVIA1
@@ -664,10 +679,25 @@ SyncPAL:
             ldx #>TIMER_VALUE_PAL
             jmp ContInit1
 
+; and NTSC
+
+SyncNTSC:
+            ; Data for NTSC machines. See for example:
+            ; http://www.antimon.org/dl/c64/code/stable.txt
+            LINES_NTSC = 261
+            CYCLES_PER_LINE_NTSC = 65
+            TIMER_VALUE_NTSC = LINES_NTSC * CYCLES_PER_LINE_NTSC - 2
+@loopsync:  lda VICRAST     ; Synchronization loop
+            cmp #110
+            bne @loopsync
+            lda #<TIMER_VALUE_NTSC
+            ldx #>TIMER_VALUE_NTSC
+            jmp ContInit1
+
 ; Synchronize the timer to the NMI interrupt to a given raster line.
 
 SyncLater:
-            lda #155     ; Synchronization loop
+            lda RasterlNMI  ; Synchronization loop
 @loopsync:  cmp VICRAST
             bne @loopsync
             rts
@@ -723,7 +753,7 @@ PutRings:
 ; NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI - NMI
 
 NMIHandler: pha
-            lda #$12
+            lda NormSCRpos
             sta VICSCRHO
             bit T1CLVIA1
             pla
@@ -736,7 +766,7 @@ NMIHandler: pha
 ;
 ;
 ; IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ - IRQ
-vpos=$22
+
 negspeed:  lda #0
             sec
             sbc ShipXSpeed
@@ -747,7 +777,7 @@ IrqHandler: pha
             pha
             tya
             pha
-            lda #08
+            lda #09
             sta VICCOLOR
             lda #63         ; Switch "off" the screen, shifting all to right
             sta VICSCRHO
@@ -781,14 +811,12 @@ posspeed:   asl
             bpl @nopb       ; Check if we past 127th line.
             lda #127
             sta ShipPosY
-@nopb:      
-            dec VICSCRVE   ; Decrement the screen position so that everything
+@nopb:      dec VICSCRVE   ; Decrement the screen position so that everything
             lda VICSCRVE   ; scrolls towards the top by 2 raster lines.
             
-            
-            cmp #vpos-16    ; 16 x 2 pixels = 4 lines
+            cmp Vposm16    ; 16 x 2 pixels = 4 lines
             bne @redraw
-            lda #vpos       ; Put the screen again in the bottom position
+            lda Vpos       ; Put the screen again in the bottom position
             sta VICSCRVE
             inc CurrentYPos ; We increase the position in the cavern
             lda #0
@@ -800,7 +828,7 @@ posspeed:   asl
             bmi @redraw
             jsr UpdateGremlin
 @redraw:    lda VICSCRVE
-            cmp #vpos-15
+            cmp Vposm15
             bne @chk
             lda IrqCn
             cmp #1
@@ -809,8 +837,7 @@ posspeed:   asl
             sta UpdateWPos
             jsr UpdatePlants
             jsr ChangeRingState
-@chk:       lda #EMPTY      ; Launch a complete redraw of the cavern
-            jsr CLS
+@chk:       jsr CLSA        ; Launch a complete redraw of the cavern
                             ; Prepare for the left wall
             lda #<CavernLeft
             sta CavernPTR
@@ -837,7 +864,7 @@ posspeed:   asl
             sty PosY
             lda CurrXPosR
             sta CavernPosX
-            lda #0
+            tya
             sta Direction
             jsr DrawCavern
             lda CavernPosX
@@ -847,12 +874,15 @@ posspeed:   asl
 @endscroll:
 @cont3:     lda Win
             bne @nodrawship
+            bit GremlinX
+            bmi @nogremlin
             jsr DrawGremlin
+@nogremlin:
             jsr DrawShip
 @nodrawship:
 
-@nomusic1:  ;lda #$0A
-            ;sta VICCOLOR
+@nomusic1:  lda #$08
+            sta VICCOLOR
             pla             ; Restore registers
             tay
             pla
@@ -861,7 +891,7 @@ posspeed:   asl
             jmp $EABF       ; Jump to the standard IRQ handling routine
 
 UpdatePlants:
-            lda PlantDir    ; Update the position of plant shoots
+            bit PlantDir    ; Update the position of plant shoots
             bmi @negshoot
             inc PlantShoot
             lda PlantShoot
@@ -872,7 +902,6 @@ UpdatePlants:
             jmp @nochange
 @negshoot:  dec PlantShoot
             lda PlantShoot
-            cmp #0
             bne @nochange
             lda #0
             sta PlantDir
@@ -890,7 +919,6 @@ UpdatePlants:
 ChangeRingState:
             lda PlantShoot
             and #$03
-            clc
             adc #RING1
             tax
             ldy #RING
@@ -913,7 +941,6 @@ CheckCrash:
             iny
             jsr GetChar
             sta BLENDCHD
-                    
 @skip:      
             ldx BLENDCHA
             cpx #EMPTY
@@ -984,8 +1011,6 @@ UpdateGremlin:
             rts
 
 DrawGremlin:
-            bit GremlinX
-            bmi @exit
             ldx GremlinX
             ldy GremlinY
             cpy #0
@@ -997,7 +1022,7 @@ DrawGremlin:
 @deactivate:
             lda #80
             sta GremlinX
-@exit:      rts
+            rts
 
 ; Draw the player's ship
 
@@ -1015,7 +1040,7 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             lsr
             lsr
             tax
-            lda #3          ; The line that correspond to highest ship pos.
+            lda #1          ; The line that correspond to highest ship pos.
             lsr tmp4
             lsr tmp4
             lsr tmp4
@@ -1037,18 +1062,28 @@ NormalShip: lda #SHIP
 
 DrawSprite: ldx ShipChrX
             ldy ShipChrY
+            jsr PosChar
+            ldy #0
             lda #SPRITE1A
-            jsr DrawCharFast
+            sta (POSCHARPT),Y
+            lda Colour
+            sta (POSCOLPT),Y
             iny
-            lda #SPRITE1B
-            jsr DrawCharFast
             lda #SPRITE1C
-            inx
-            dey
-            jsr DrawCharFast
-            lda #SPRITE1D
+            sta (POSCHARPT),Y
+            lda Colour
+            sta (POSCOLPT),Y
+            lda #SPRITE1B
+            ldy #16
+            sta (POSCHARPT),Y
+            lda Colour
+            sta (POSCOLPT),Y
             iny
-            jmp DrawCharFast
+            lda #SPRITE1D
+            sta (POSCHARPT),Y
+            lda Colour
+            sta (POSCOLPT),Y
+            rts
 
 LoadAppropriateSprite:
             lda #<(GRCHARS1+SPRITE1A*8)
@@ -1069,10 +1104,8 @@ CheckCollision:
             sta DEST
             lda CHRPTR+1
             sta DEST+1
-
             sty CharCode
             jsr CalcChGenOfs
-
             ldy #7
 @loop:      lda (CHRPTR),Y
             and (DEST),Y
@@ -1192,8 +1225,7 @@ Die:        bit Win         ; The routine can be called twice if the collision
             jsr Bin2BCD
             ldx #5
             iny
-            jsr PrintRes
-            rts
+            jmp PrintRes
 
 ; Add the value contained in A to the current score
 AddScore:   clc
@@ -1215,12 +1247,12 @@ DrawChar:   cpx #16         ; Check if the X value is out of range
             bcs _exit       ; Exit if Y greater than 31 (no of rows)
 DrawCharFast:               ; Skip the controls :-)
             sty PosY
-            pha
+            sta TmpChar
             jsr PosChar
             ldy #0
             lda Colour
             sta (POSCOLPT),Y
-            pla
+            lda TmpChar
             sta (POSCHARPT),Y
             ldy PosY
 _exit:      rts
@@ -1283,11 +1315,9 @@ PosChar:    stx PosX
             clc
 @nocorr:    adc PosX
             sta TmpPos
-            ;pha
             adc POSCHARPT
             sta POSCHARPT
             lda TmpPos
-            ;pla
             adc POSCOLPT
             sta POSCOLPT
             rts
@@ -1327,13 +1357,13 @@ LoadSprite: clc
 @noshift:   ora (SPRITECH),y
             sta (SPRITECH),y    ; Save
             tya
-            pha
+            sta TmpPos
             adc #16
             tay
             lda CharShr
             ora (SPRITECH),y
             sta (SPRITECH),y    ; Save
-            pla
+            lda TmpPos
             tay
             iny
             cpy #08
@@ -1385,12 +1415,14 @@ BlendSprite:
             ldy #SPRITE1D
 OrChar:     jsr PrepareCopy
             ;                   ; no rts here
-OrMem:      dey
+OrMem:      lda (SOURCE),y
+            ora (DEST),y
+            sta (DEST),y
+            dey
+            bne OrMem
             lda (SOURCE),y
             ora (DEST),y
             sta (DEST),y
-            cpy #0
-            bne OrMem
             rts
             
 PrepareCopy:
@@ -1408,37 +1440,21 @@ PrepareCopy:
             sta DEST
             lda CHRPTR+1
             sta DEST+1
-            ldy #8
+            ldy #7
             rts
 
 ; Prepare for a copy of the memory of the character to be blended in the sprite
 ; 1 area.
 ; X = the caracter to be blended (source)
 ; Y = the sprite character (destination)
-CopyChar:   ; stx CharCode
-;             tya
-;             pha
-;             jsr CalcChGenOfs
-;             lda CHRPTR
-;             sta SOURCE
-;             lda CHRPTR+1
-;             sta SOURCE+1
-; 
-;             pla
-;             sta CharCode
-;             jsr CalcChGenOfs
-;             lda CHRPTR
-;             sta DEST
-;             lda CHRPTR+1
-;             sta DEST+1
-;             ldy #8
+CopyChar:
             jsr PrepareCopy
-            ;                   ; no rts here
-CopyMem:    dey
+CopyMem:    lda (SOURCE),y
+            sta (DEST),y
+            dey
+            bne CopyMem
             lda (SOURCE),y
             sta (DEST),y
-            cpy #0
-            bne CopyMem
             rts
             
 ; Print a string (null terminated) whose address is contained in str1 and
@@ -1459,11 +1475,9 @@ PrintStr:   sty Pos
             rts
 
 
-; Clear the screen and set the colour to black.
+; Clear the screen.
 
 CLSA:
-            lda #BLACK
-            jsr PaintColour
             lda #EMPTY
             ; no return here!
 
@@ -1473,7 +1487,7 @@ CLSA:
 CLS:
             size=16*31/16+1
             ldx #size
-@loop:      sta MEMSCR-1,X          ; A (small) degree of loop unrolling avoids
+@loop:      sta MEMSCR-1,X          ; A degree of loop unrolling avoids
             sta MEMSCR+size-1,X     ; to mess with a 16-bit loop.
             sta MEMSCR+size*2-1,X
             sta MEMSCR+size*3-1,X
@@ -1493,35 +1507,15 @@ CLS:
             bne @loop
             rts
 
-; Put the colour code contained in A everywhere in the screen
-
-PaintColour:
-            ldx #size
-@loop:      sta MEMCLR-1,X
-            sta MEMCLR+size-1,X
-            sta MEMCLR+size*2-1,X
-            sta MEMCLR+size*3-1,X
-            sta MEMCLR+size*4-1,X
-            sta MEMCLR+size*5-1,X
-            sta MEMCLR+size*6-1,X
-            sta MEMCLR+size*7-1,X
-            dex
-            bne @loop
-            rts
-
 ; A simple delay
 
-Delay:      ldx #$FF
-            ldy #$FF
+ShortDelay: ldy #$40
+            ldx #$FF
 Delayloop:  dex
             bne Delayloop
             dey
             bne Delayloop
             rts
-
-ShortDelay: ldy #$40
-            ldx #$FF
-            jmp Delayloop
 
 ; Convert a 16-bit word to a 24-bit BCD. Adapted from here:
 ; http://www.obelisk.me.uk/6502/algorithms.html
