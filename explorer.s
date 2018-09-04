@@ -822,9 +822,12 @@ NMIHandler: pha
 @skip:
 .endmacro
 
-negspeed:   lda #0
-            sec
-            sbc ShipXSpeed
+negspeed:   eor #$FF
+            clc
+            adc #1
+            ;lda #0
+            ;sec
+            ;sbc ShipXSpeed
             jmp posspeed
 
 stopgame:   jmp nodrawship
@@ -983,26 +986,22 @@ CheckCrash:
             iny
             lda (POSCHARPT),y
             sta BLENDCHD
-@skip:  
-            ldx BLENDCHA
-            cpx #EMPTY
+@skip:
+            ldx BLENDCHA        ; The code 0 is for the EMPTY char
             beq @next1
             cpx #SPRITE1A
             beq @next4
             ldy #SPRITE1A
             jsr CheckCollision
 @next1:     ldx BLENDCHB
-            cpx #EMPTY
             beq @next2
             ldy #SPRITE1B
             jsr CheckCollision
 @next2:     ldx BLENDCHC
-            cpx #EMPTY
             beq @next3
             ldy #SPRITE1C
             jsr CheckCollision
 @next3:     ldx BLENDCHD
-            cpx #EMPTY
             beq @next4
             ldy #SPRITE1D
             jmp CheckCollision
@@ -1057,12 +1056,12 @@ DrawShip:   lda ShipPosX    ; Calculate the ship positions in characters
             lsr
             lsr
             tax
-            lda #1          ; The line that correspond to highest ship pos.
-            lsr tmp4
-            lsr tmp4
-            lsr tmp4
+            lda tmp4
+            lsr
+            lsr
+            lsr
             clc
-            adc tmp4
+            adc #1          ; The line that correspond to highest ship pos.
             tay             ; X and Y now contain the new positions of the ship
             sty ShipChrY
             stx ShipChrX
@@ -1288,15 +1287,17 @@ GetChar:    cpx #16         ; Check if the X value is out of range
             sta POSCHARPT
             lda #>MEMSCR
             sta POSCHARPT+1
+            cpy #15          ; 2 cycles
             tya
-            asl             ; 16 columns per line. Multiply!
             asl
             asl
-            asl             ; If it shifts an 1 in the carry, this means that
-            bcc @nocorr     ; we need to write in the bottom-half of the screen
+            asl
+            asl
+            bcc @nocorr
             inc POSCHARPT+1
             clc
-@nocorr:    adc PosX
+@nocorr:    
+            adc PosX
             adc POSCHARPT
             sta POSCHARPT
             ldy #0
@@ -1322,11 +1323,11 @@ PosChar:    stx PosX
             lda #>MEMCLR
             sta POSCOLPT+1
             tya
-            asl             ; 16 columns per line. Multiply!
             asl
             asl
-            asl             ; If it shifts an 1 in the carry, this means that
-            bcc @nocorr     ; we need to write in the bottom-half of the screen
+            asl
+            asl
+            bcc @nocorr
             inc POSCHARPT+1
             inc POSCOLPT+1
             clc
@@ -1409,29 +1410,48 @@ CalcChGenOfs:
 @normal:    rts
 
 ; Clear the contents of a "sprite".
+
 ClearSprite:
             lda #0
             ldy #32
 @loop:      dey
             sta (SPRITECH),y    ; sta does not affect processor flags
+            dey
+            sta (SPRITECH),y    ; sta does not affect processor flags
+            dey
+            sta (SPRITECH),y    ; sta does not affect processor flags
+            dey
+            sta (SPRITECH),y    ; sta does not affect processor flags
             bne @loop
             rts
 
-; Prepare the background of the first sprite with the code.
+; Blend the sprite characters with the four characters that are on the
+; background.
+
 BlendSprite:
-            ldx BLENDCHA
+            ldx BLENDCHA        ; Code 0 is the EMPTY char
+            beq @skip1
             ldy #SPRITE1A
             jsr OrChar
-            ldx BLENDCHB
+@skip1:     ldx BLENDCHB
+            beq @skip2
             ldy #SPRITE1B
             jsr OrChar
-            ldx BLENDCHC
+@skip2:     ldx BLENDCHC
+            beq @skip3
             ldy #SPRITE1C
             jsr OrChar
-            ldx BLENDCHD
+@skip3:     ldx BLENDCHD
+            beq skip4
             ldy #SPRITE1D
+
+            ; no rts here
+
+; Blend two characters by putting in the destination the OR between the source
+; and the destination
+
 OrChar:     jsr PrepareCopy
-            ;                   ; no rts here
+            ;                   
 OrMem:      lda (SOURCE),y
             ora (DEST),y
             sta (DEST),y
@@ -1440,7 +1460,7 @@ OrMem:      lda (SOURCE),y
             lda (SOURCE),y
             ora (DEST),y
             sta (DEST),y
-            rts
+skip4:      rts
 
 PrepareCopy:
             stx CharCode
@@ -2027,7 +2047,7 @@ DefChars:
             .byte %00011000
 
             EXPLOSION1=20
-            .byte %10000000     ; Block, ch. 11 (normally M)
+            .byte %10000000 
             .byte %00100010
             .byte %10010000
             .byte %00110100
