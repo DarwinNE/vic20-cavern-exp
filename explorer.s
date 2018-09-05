@@ -100,6 +100,7 @@
         NormSCRpos= $54     ; Centered position of the screen (b.)
         MaxShipPos= $55     ; Maximum vertical position of the ship (b.)
         CavernSize= $56     ; Number of lines of the cavern (b.)
+        IsNTSC    = $57     ; =128 if NTSC, =0 if PAL (b.)
 
 
         INITVALC=$ede4
@@ -297,8 +298,7 @@ StartGame:  clc
             lda Vpos       ; Put the screen again in the bottom position
             sta VICSCRVE
             jsr PutRings
-            jsr ChangeRingState
-            rts
+            jmp ChangeRingState
 
 ; Draw a cavern wall in the position specified in PosX, PosY
 
@@ -578,6 +578,8 @@ PutPlant2:  lda #PLANT2         ; Position the plant
 ; Screen init value for PAL and NTSC
 
 CenterScreenPAL:
+            lda #0
+            sta IsNTSC
             lda #30
             sta CavernSize
             lda #$22
@@ -591,6 +593,8 @@ CenterScreenPAL:
             jmp ContInit
 
 CenterScreenNTSC:
+            lda #128
+            sta IsNTSC
             lda #25
             sta CavernSize
             lda #22
@@ -636,10 +640,9 @@ ContInit:   sty VICSCRVE    ; Centre the screen vertically...
             lda #$40        ; Mode free run, output -> IRQ and NMI
             sta ACRVIA1     ; Set VIA registers
             sta ACRVIA2
-            lda INITVALC
-            cmp #$05
-            beq SyncNTSC    ; Load the screen settings
-            bne SyncPAL
+            bit IsNTSC
+            bmi SyncNTSC    ; Load the screen settings
+            bpl SyncPAL
 ContInit1:  sta T1LLVIA2
             stx T1CHVIA2    ; Set up the timer and start it
             sta T1LLVIA1
@@ -837,7 +840,7 @@ IrqHandler: pha
             pha
             tya
             pha
-            lda #09
+            ;lda #09
             ;sta VICCOLOR
             lda #63         ; Switch "off" the screen, shifting all to right
             sta VICSCRHO
@@ -934,8 +937,8 @@ posspeed:   asl
             bmi @nogremlin
             DrawGremlin
 @nogremlin: jsr DrawShip
-nodrawship: lda #$08
-            sta VICCOLOR
+nodrawship: ;lda #$08
+            ;sta VICCOLOR
             pla             ; Restore registers
             tay
             pla
@@ -1101,14 +1104,6 @@ DrawSprite: ldx ShipChrX
             sta (POSCOLPT),Y
             rts
 
-LoadAppropriateSprite:
-            lda #<(GRCHARS1+SPRITE1A*8)
-            sta SPRITECH
-            lda #>(GRCHARS1+SPRITE1A*8)
-            sta SPRITECH+1
-            jsr ClearSprite
-            jsr CalcChGenOfs
-            jmp LoadSprite
 
 ; Check a possible collision between character x and y.
 ; Employs CharCode, CHARPTR, DEST, registers A, X, Y, Win.
@@ -1340,6 +1335,15 @@ PosChar:    stx PosX
             sta POSCOLPT
             rts
 
+; Prepare memory pointers for a new sprite, clear it and load sprite data
+
+LoadAppropriateSprite:
+            lda #<(GRCHARS1+SPRITE1A*8)
+            sta SPRITECH
+            lda #>(GRCHARS1+SPRITE1A*8)
+            sta SPRITECH+1
+            jsr ClearSprite
+            ; no rts here
 
 ; Put a "sprite", that is a 8x8 cell in a 2x2 character position.
 ; A contains the character code. It should be less than 32.
@@ -1372,14 +1376,12 @@ LoadSprite: clc
             ror CharShr         ; the shift in pixels to the right
             dex
             bne @loop2
-@noshift:   ora (SPRITECH),y
-            sta (SPRITECH),y    ; Save
+@noshift:   sta (SPRITECH),y    ; Save
             tya
             sta TmpPos
             adc #16
             tay
             lda CharShr
-            ora (SPRITECH),y
             sta (SPRITECH),y    ; Save
             lda TmpPos
             tay
@@ -1409,19 +1411,16 @@ CalcChGenOfs:
             inc CHRPTR+1
 @normal:    rts
 
-; Clear the contents of a "sprite".
+; Clear the contents of a "sprite" (SPRITE1A to SPRITE1D)
 
 ClearSprite:
             lda #0
-            ldy #32
+            ldy #8
 @loop:      dey
-            sta (SPRITECH),y    ; sta does not affect processor flags
-            dey
-            sta (SPRITECH),y    ; sta does not affect processor flags
-            dey
-            sta (SPRITECH),y    ; sta does not affect processor flags
-            dey
-            sta (SPRITECH),y    ; sta does not affect processor flags
+            sta GRCHARS1+SPRITE1A*8,y ; sta does not affect processor flags
+            sta GRCHARS1+SPRITE1B*8,y
+            sta GRCHARS1+SPRITE1C*8,y
+            sta GRCHARS1+SPRITE1D*8,y
             bne @loop
             rts
 
@@ -1451,7 +1450,8 @@ BlendSprite:
 ; and the destination
 
 OrChar:     jsr PrepareCopy
-            ;                   
+            ; If you use OrMem separately, y should contain the number of bytes
+            ; to treat minus one.
 OrMem:      lda (SOURCE),y
             ora (DEST),y
             sta (DEST),y
@@ -1479,8 +1479,6 @@ PrepareCopy:
             sta DEST+1
             ldy #7
             rts
-
-
 
 ; Print a string (null terminated) whose address is contained in str1 and
 ; str1+1 at the position given by X and Y pointers
@@ -1526,11 +1524,17 @@ CLS:
             sta MEMSCR+size*11-1,X
             sta MEMSCR+size*12-1,X
             sta MEMSCR+size*13-1,X
-            sta MEMSCR+size*14-1,X
-            sta MEMSCR+size*15-1,X
+
             dex
             bne @loop
-            rts
+            bit IsNTSC              ; The NTSC screen is smaller.
+            bmi @yes                ; Skipping this part in the CLS allows to
+            ldx #size               ; shave a few microseconds that are precious
+@loop2:     sta MEMSCR+size*14-1,X  ; to keep up to the 60 Hz refresh rate
+            sta MEMSCR+size*15-1,X
+            dex
+            bne @loop2
+@yes:       rts
 
 ; A simple delay
 
@@ -1748,7 +1752,7 @@ CavernLeft:
             .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_LEFT ; -1 (3)
             .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2,S_STAY
             .byte S_RIGH+D_ROCK2,S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY
-            .byte S_LEFT+D_ROCK1++L_LEVEL ; 0 (4)  ***** LEVEL2 ******
+            .byte S_LEFT+D_ROCK1+L_LEVEL ; 0 (4)  ***** LEVEL2 ******
             .byte S_RIGH+D_ROCK2,S_RIGH,S_STAY+D_ROCK1
             .byte S_LEFT+D_ROCK2,S_WIGG+P_PLANT1
             .byte S_STAY,S_STAY+D_ROCK1,S_WIGG ;+1 (5)
