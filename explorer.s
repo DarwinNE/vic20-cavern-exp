@@ -575,8 +575,6 @@ PutPlant2:  lda #PLANT2         ; Position the plant
 ;
 ; INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT - INIT
 
-; Screen init value for PAL and NTSC
-
 CenterScreenPAL:
             lda #0
             sta IsNTSC
