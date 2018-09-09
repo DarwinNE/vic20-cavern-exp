@@ -383,14 +383,14 @@ NoDecoration:                   ; End of the decoration code
             lda #31
             sta GremlinY
 NoSurface:  lda CurrCode        ; Handle rings and levels
-            and #L_MASK
-            cmp #L_RING
-            bne @nd2
+            and #L_RING
+            beq NoRings
             jmp PutRing
-@nd2:       cmp #L_LEVEL
-            bne NoRings
+NoRings:    lda CurrCode
+            and #L_LEVEL
+            beq NoLevel
             jmp IncrementLevel
-NoRings:
+NoLevel:
             lda PosY
             clc                 ; The carry should be always clear here
             adc #4              ; Every step is 4 lines
@@ -728,8 +728,12 @@ PrintRes:
             lda Res
             jmp PrintBCD
 
-PutRings:
-            ldy #255
+; Put the rings in the cavern. Follow a quasi-random pattern using the
+; code as "pseudo-random" number generator. There is a tendency to put rings
+; on the right, as expected, the "pseudo-random" is not random at all, but
+; this is not a big deal in the game.
+
+PutRings:   ldy #255
 @loop:      lda NMIHandler,y
             cmp #5
             bmi @noringr
@@ -987,7 +991,7 @@ CheckCrash:
             iny
             lda (POSCHARPT),y
             sta BLENDCHD
-@skip:
+@skip:      
             ldx BLENDCHA        ; The code 0 is for the EMPTY char
             beq @next1
             cpx #SPRITE1A
@@ -1023,7 +1027,7 @@ IncrementLevel:
             bmi @normal
             lda CanIncLev
             bne @normal
-            lda #10
+            lda #8
             sta CanIncLev
             lda Level
             cmp #LEVELNO-1
@@ -1037,7 +1041,7 @@ IncrementLevel:
             pla
             tax
 @normal:    clc
-            jmp NoRings
+            jmp NoLevel
 
 
 
@@ -1622,7 +1626,6 @@ P_PLANT1 = %00010000
 P_PLANT2 = %00100000
 P_GREML  = %00110000
 
-L_MASK = %11000000
 L_RING = %01000000
 L_LEVEL= %10000000
 
@@ -1681,10 +1684,10 @@ CavernRight:
             .byte S_RIGH+D_ROCK1,S_LEFT+P_PLANT2+D_ROCK2,S_STAY
             .byte S_RIGH,S_WIGG,S_STAY+P_GREML
             .byte S_STAY+D_ROCK2
-            .byte S_STAY+D_ROCK1+L_LEVEL+P_GREML ; +1 (16) ***** LEVEL4 ******
+            .byte S_STAY+L_LEVEL ; +1 (16) ***** LEVEL4 ******
             ; tot: +1
 
-            .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK1,S_RIGH+D_ROCK2
+            .byte S_LEFT+D_ROCK1+P_GREML,S_LEFT,S_STAY+D_ROCK1,S_RIGH+D_ROCK2
             .byte S_WIGG+P_PLANT2+D_ROCK1,S_STAY
             .byte S_STAY,S_WIGG+P_PLANT2+D_ROCK2 ; -1 (17)
             .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY,S_RIGH+D_ROCK2
@@ -1696,7 +1699,7 @@ CavernRight:
             .byte S_RIGH+D_ROCK1,S_LEFT,S_STAY,S_RIGH+D_ROCK2
             .byte S_WIGG+P_PLANT2
             .byte S_STAY+D_ROCK1,S_STAY
-            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (20) ***** LEVEL5 ******
+            .byte S_LEFT+L_LEVEL ; 0 (20) ***** LEVEL5 ******
             .byte S_RIGH+D_ROCK2,S_RIGH+D_ROCK1,S_STAY
             .byte S_LEFT,S_WIGG+D_ROCK1,S_STAY+D_ROCK1
             .byte S_STAY+D_ROCK2,S_WIGG ;+1 (21)
@@ -1711,7 +1714,7 @@ CavernRight:
             .byte S_RIGH+P_PLANT2+D_ROCK2
             .byte S_WIGG+P_PLANT2,S_STAY+D_ROCK2
             .byte S_STAY+D_ROCK1
-            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (24) ***** LEVEL6 ****** tot: 0
+            .byte S_LEFT+L_LEVEL ; 0 (24) ***** LEVEL6 ****** tot: 0
 
             .byte S_WIGG+D_ROCK1,S_LEFT+D_ROCK2+P_PLANT2,S_STAY
             .byte S_RIGH+D_ROCK1,S_WIGG
@@ -1727,10 +1730,10 @@ CavernRight:
             .byte S_STAY+D_ROCK2+P_PLANT2,S_RIGH+D_ROCK1,S_WIGG
             .byte S_STAY
             .byte S_STAY+D_ROCK2
-            .byte S_LEFT+D_ROCK1+P_PLANT2+L_LEVEL ; 0 (28) ***** LEVEL7 ******
+            .byte S_LEFT+L_LEVEL ; 0 (28) ***** LEVEL7 ******
             .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK2+P_PLANT2
             .byte S_RIGH+D_ROCK1,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK2,S_STAY,S_WIGG+D_ROCK1+L_LEVEL ; -1 (29)
+            .byte S_STAY+D_ROCK2,S_STAY,S_WIGG+L_LEVEL ; -1 (29)
             .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY,S_RIGH,S_WIGG
             .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2,S_LEFT ; 0 (30)
             .byte S_WIGG,S_LEFT,S_STAY+D_ROCK2,S_RIGH+D_ROCK1,S_WIGG
@@ -1750,7 +1753,7 @@ CavernLeft:
             .byte S_WIGG+P_PLANT1,S_STAY+D_ROCK2,S_STAY,S_LEFT ; -1 (3)
             .byte S_RIGH+D_ROCK1,S_LEFT+D_ROCK2,S_STAY
             .byte S_RIGH+D_ROCK2,S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY
-            .byte S_LEFT+D_ROCK1+L_LEVEL ; 0 (4)  ***** LEVEL2 ******
+            .byte S_LEFT+L_LEVEL ; 0 (4)  ***** LEVEL2 ******
             .byte S_RIGH+D_ROCK2,S_RIGH,S_STAY+D_ROCK1
             .byte S_LEFT+D_ROCK2,S_WIGG+P_PLANT1
             .byte S_STAY,S_STAY+D_ROCK1,S_WIGG ;+1 (5)
@@ -1785,7 +1788,7 @@ CavernLeft:
             .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY,S_STAY,S_LEFT ; -1 (15)
             .byte S_RIGH,S_LEFT+D_ROCK1,S_STAY,S_RIGH
             .byte S_WIGG+D_ROCK1+P_PLANT1,S_STAY+D_ROCK2,S_STAY
-            .byte S_LEFT+D_ROCK2+L_LEVEL ; 0 (16) ***** LEVEL4 ******
+            .byte S_LEFT+L_LEVEL ; 0 (16) ***** LEVEL4 ******
             ; tot: -2
 
             .byte S_RIGH,S_RIGH,S_STAY+D_ROCK2,S_LEFT

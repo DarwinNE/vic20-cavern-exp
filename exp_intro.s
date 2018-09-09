@@ -69,9 +69,10 @@
 
         REPEATKE = $028A    ; Repeat all keys
 
-        VOICE1  = GEN2      ; Voice 1 for music
-        VOICE2  = GEN1      ; Voice 2 for music
-        EFFECTS = GEN3      ; Sound effects (not noise)
+        VOICE1  = GEN3      ; Voice 1 for music
+        VOICE2  = GEN2      ; Voice 2 for music
+        VOICE3  = GEN1      ; Voice 3 for music
+
         
 
         terminator1 = $07   ; Used in PRNSTRN
@@ -219,6 +220,8 @@ SyncPAL:
             bne @loopsync
             lda #<TIMER_VALUE_PAL
             ldx #>TIMER_VALUE_PAL
+            nop
+            nop
             jmp ContInit
 
 SyncNTSC:
@@ -260,7 +263,7 @@ Init:       jsr MovCh64
             sta VICCHGEN    ; while leaving ch. 128-255 to their original pos.
             lda #$0A
             sta VICCOLOR
-            lda #$7F        ; Turn on the volume, set multicolour add. colour 2
+            lda #$75        ; Turn on the volume, set multicolour add. colour 2
             sta VOLUME
             lda INITVALC
             cmp #$05        ; Determine if we run on a PAL or NTSC machine
@@ -291,6 +294,9 @@ ContInit:   sta T1LLVIA2
             sta portaconfig
             lda #0          ; Many thanks to @BedfordLvlExp for the joystick
             sta PORTAVIA1d  ; code here!
+            sta Repet1
+            sta Repet2
+            sta Repet3
             rts
 
 ; and NTSC
@@ -372,8 +378,15 @@ IrqHandler: pha
             tya
             pha
             inc IRQcounter
+            
             jsr Music1
             jsr Music2
+
+            lda Repet1
+            beq @skip1
+            jsr Music3
+            
+@skip1:
             pla             ; Restore registers
             tay
             pla
@@ -390,6 +403,9 @@ Music1:     ldy Voice1ctr
             bne @dec
             lda #$00
             sta VOICE1
+            dey
+            sty Voice1ctr
+            rts
 @dec:       dey
             sty Voice1ctr
             lda IRQcounter
@@ -401,7 +417,7 @@ Music1:     ldy Voice1ctr
             rts
 @octavesup: lda CurrNote1
             clc
-            adc #8
+            adc #7
             tay
             lda octave,y
             sta VOICE1
@@ -443,9 +459,8 @@ Music1:     ldy Voice1ctr
 @repeat:    ldx #0
             stx Voice1ptr
             stx Voice1ctr
-            stx Voice2ptr
-            stx Voice2ctr
-            rts
+            inc Repet1
+            jmp @playnext
             
 
 ; Music driver for voice 2. It should be called every IRQ to handle music
@@ -456,21 +471,29 @@ Music2:     ldy Voice2ctr
             bne @dec
             lda #$00
             sta VOICE2
+            sta VOICE3
+            dey
+            sty Voice2ctr
+            rts
 @dec:       dey
             sty Voice2ctr
             lda IRQcounter
-            and #2
+            clc
+            adc #1
+            and #4
             bne @octavesup
             ldy CurrNote2
             lda octave,y
             sta VOICE2
+            sta VOICE3
             rts
 @octavesup: lda CurrNote2
             clc
-            adc #8
+            adc #7
             tay
             lda octave,y
             sta VOICE2
+            sta VOICE3
             rts
 
 @playnext:  ldx Voice2ptr
@@ -491,7 +514,7 @@ Music2:     ldy Voice2ctr
             sty CurrNote2
             lda octave,y
             sta VOICE2
-            ;sta VOICE3
+            sta VOICE3
             ldy Voice2drt
             sty Voice2ctr
             jmp @exitmusic
@@ -509,8 +532,70 @@ Music2:     ldy Voice2ctr
 @repeat:    ldx #0
             stx Voice2ptr
             stx Voice2ctr
+            inc Repet2
+            jmp @playnext
+         
+; Music driver for voice 3. It should be called every IRQ to handle music
+
+Music3:     ldy Voice3ctr
+            beq @playnext
+            cpy Voice3nod
+            bne @dec
+            lda #$00
+            sta NOISE
+@dec:       dey
+            sty Voice3ctr
+            ldy Envelopec
+            lda envelope,y
+            beq @fullvol
+            ora #$70
+            sta VOLUME
+            inc Envelopec
             rts
-            
+@fullvol:
+            lda #$75
+            sta VOLUME
+            rts
+@playnext:  ldx Voice3ptr
+            lda Voice3data,x
+            cmp #repeatm
+            beq @repeat
+            and #maskcode
+            cmp #notecode
+            beq @note
+            cmp #duracode
+            beq @duration
+
+@exitmusic: inx
+            stx Voice3ptr
+            rts
+
+@note:      ldy Voice3data,x
+            sty CurrNote3
+            lda octave,y
+            sta NOISE
+            lda #0
+            sta Envelopec
+            ldy Voice3drt
+            sty Voice3ctr
+            jmp @exitmusic
+
+@duration:  lda Voice3data,x
+            and #unmask
+            sta Voice3drt
+            inx
+            lda Voice3data,x
+            sta Voice3nod
+            inx
+            stx Voice3ptr
+            jmp @playnext
+
+@repeat:    ldx #0
+            stx Voice3ptr
+            stx Voice3ctr
+            inc Repet3
+            jmp @playnext
+
 ; DATA - DATA - DATA - DATA - DATA - DATA - DATA - DATA - DATA - DATA - DATA
 ;
 ; Data and configuration settings.
@@ -527,6 +612,7 @@ unmask   = %01111111
 
 VoiceBase:  .byte $00
 
+Repet1:     .byte $00
 Voice1ptr:  .byte $00
 Voice1ctr:  .byte $00
 Loop1ctr:   .byte $00
@@ -535,6 +621,7 @@ Voice1drt:  .byte $00
 Voice1nod:  .byte $00
 CurrNote1:  .byte $00
 
+Repet2:     .byte $00
 Voice2ptr:  .byte $00
 Voice2ctr:  .byte $00
 Loop2ctr:   .byte $00
@@ -542,6 +629,16 @@ Loop2str:   .byte $00
 Voice2drt:  .byte $00
 Voice2nod:  .byte $00
 CurrNote2:  .byte $00
+
+Repet3:     .byte $00
+Voice3ptr:  .byte $00
+Voice3ctr:  .byte $00
+Loop3ctr:   .byte $00
+Loop3str:   .byte $00
+Voice3drt:  .byte $00
+Voice3nod:  .byte $00
+CurrNote3:  .byte $00
+Envelopec:  .byte $00
 
 
 do0=0
@@ -587,15 +684,21 @@ silence=38
 octave: 
 .byte 128,134,141,147,153,159,164,170,174,179
 .byte 183,187,191,195,198,201,204,207,210,213,215,217
-.byte 219,221,223,225,227,229,230,231,232,0
+.byte 219,221,223,225,227,229,230,231,232,234,235,236,237,238,239,240,0
 
-; Quite out of tune on higher pitches,234        ; ...,235       ;,236,237,2383,239d3,240
+envelope:
+.byte 10,15,10,9,7,5,4,3,2,1,0
+
+; Quite out of tune on higher pitches,
 
 quaver = 31
 quaverd = 20
 
 semiquaver = 15
 semiquaverd = 10
+
+semisemiquaver = 7
+semisemiquaverd= 4
 
 ; Music data
 
@@ -613,29 +716,49 @@ Voice1data: ; Measures 1 - 8
             
             .byte sol0,la0,si0,do1 
             .byte sol0,la0,si0,do1 
-            .byte sol0,la0,si0,do1 
-            .byte sol0,la0,si0,do1 
+            .byte la0,si0,do1,re1 
+            .byte la0,si0,do1,re1
+
+            .byte re1,mi1,fa1,sol1 
+            .byte re1,mi1,fa1,sol1 
+            .byte re1,mi1,fa1,sol1 
+            .byte re1,mi1,fa1,sol1 
 
             .byte repeatm
             
 Voice2data: ; Measures 1 - 8
             .byte duracode + semiquaver, semiquaverd
-            .byte mi0,mi0,mi0,mi0
-            .byte mi0,mi0,mi0,mi0
-            .byte mi0,mi0,mi0,mi0
-            .byte mi0,mi0,mi0,mi0
+            .byte mi1,mi1,mi1,mi1
+            .byte mi1,mi1,mi1,mi1
+            .byte mi1,mi1,mi1,mi1
+            .byte mi1,mi1,mi1,mi1
            
-            .byte fa0,fa0,fa0,fa0
-            .byte fa0,fa0,fa0,fa0
-            .byte mi0,mi0,mi0,mi0
-            .byte mi0,mi0,mi0,mi0
+            .byte fa1,fa1,fa1,fa1
+            .byte fa1,fa1,fa1,fa1
+            .byte mi1,mi1,mi1,mi1
+            .byte mi1,mi1,mi1,mi1
             
-            .byte re0,re0,re0,sol0
-            .byte re0,re0,re0,sol0
-            .byte fa0,sol0,la0,si0
-            .byte fa0,sol0,la0,si0
+            .byte re1,re1,re1,sol1
+            .byte re1,re1,re1,sol1
+            .byte fa1,sol1,la1,si1
+            .byte fa1,sol1,la1,si1
+            
+            .byte sol1,sol1,sol1,sol1
+            .byte sol1,sol1,sol1,sol1
+            .byte sol1,sol1,sol1,sol1
+            .byte sol1,sol1,sol1,sol1
             
             
+            .byte repeatm
+
+Voice3data: .byte duracode + quaver, 20
+            .byte do0
+            .byte duracode + semiquaver, 10
+            .byte do0,do0
+            .byte duracode + semisemiquaver, 6
+            .byte do3,do3,do3,do3
+            .byte duracode + quaver, 20
+            .byte do0
             .byte repeatm
 
 
