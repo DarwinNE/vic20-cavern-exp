@@ -991,7 +991,7 @@ CheckCrash:
             iny
             lda (POSCHARPT),y
             sta BLENDCHD
-@skip:      
+@skip:      ;rts                ; Put a rts here to disable collisions
             ldx BLENDCHA        ; The code 0 is for the EMPTY char
             beq @next1
             cpx #SPRITE1A
@@ -1013,8 +1013,13 @@ CheckCrash:
 @next4:     rts
 
 IncrementLevel:
-            lda #('L'-'@')  ; Show L followed by the number of the level
+            bit Direction
+            bpl @normal0
+            dey
+@normal0:   lda #('L'-'@')  ; Show L followed by the number of the level
             sta (POSCHARPT),Y
+            lda #WHITE
+            sta (POSCOLPT),Y
             lda Level
             sec
             adc #(48+$80) ; Convert into a number
@@ -1024,6 +1029,9 @@ IncrementLevel:
             sta (POSCOLPT),Y
             dey
             bit Direction
+            bpl @normal1
+            dey
+@normal1:   bit Direction
             bmi @normal
             lda CanIncLev
             bne @normal
@@ -1076,8 +1084,11 @@ NormalShip: lda #SHIP
             sta Colour
             jsr LoadAppropriateSprite
             jsr CheckCrash
+            bit Win
+            bmi @exit
             jsr BlendSprite
             jmp DrawSprite
+@exit:      rts
 
 ; Draw the current sprite at the ShipChrX, ShipChrY position
 
@@ -1137,10 +1148,10 @@ Collision:  cpx #RING
             adc CurrentYPos
             tay
             lda CavernLeft,y
-            and #%00111111
+            and #%10111111
             sta CavernLeft,y
             lda CavernRight,y
-            and #%00111111
+            and #%10111111
             sta CavernRight,y
             lda #10
             sta SFXCounter
@@ -1193,18 +1204,18 @@ Die:        bit Win         ; The routine can be called twice if the collision
             lda (CavernPTR),y
             ora #D_SKEL
             sta (CavernPTR),y
-            LDA Score+1  ; compare high bytes
-            CMP HiScore+1
-            BCC @label2 ; if NUM1H < NUM2H then NUM1 < NUM2
-            BNE @label1 ; if NUM1H <> NUM2H then NUM1 > NUM2 (so NUM1 >= NUM2)
-            LDA Score  ; compare low bytes
-            CMP HiScore
-            BCC @label2 ; if NUM1L < NUM2L then NUM1 < NUM2
-@label1:    lda Score+1
+            lda Score+1  ; compare high bytes
+            cmp HiScore+1
+            bcc @continue
+            bne @updatehi
+            lda Score  ; compare low bytes
+            cmp HiScore
+            bcc @continue
+@updatehi:  lda Score+1
             sta HiScore+1
             lda Score
             sta HiScore
-@label2:
+@continue:
             ldx #6
             ldy #7
             lda #YELLOW
@@ -1733,7 +1744,7 @@ CavernRight:
             .byte S_LEFT+L_LEVEL ; 0 (28) ***** LEVEL7 ******
             .byte S_LEFT+D_ROCK1,S_LEFT,S_STAY+D_ROCK2+P_PLANT2
             .byte S_RIGH+D_ROCK1,S_WIGG+P_PLANT2
-            .byte S_STAY+D_ROCK2,S_STAY,S_WIGG+L_LEVEL ; -1 (29)
+            .byte S_STAY+D_ROCK2,S_STAY,S_WIGG ; -1 (29)
             .byte S_RIGH+D_ROCK2,S_LEFT+D_ROCK1,S_STAY,S_RIGH,S_WIGG
             .byte S_STAY+D_ROCK1,S_STAY+D_ROCK2,S_LEFT ; 0 (30)
             .byte S_WIGG,S_LEFT,S_STAY+D_ROCK2,S_RIGH+D_ROCK1,S_WIGG
